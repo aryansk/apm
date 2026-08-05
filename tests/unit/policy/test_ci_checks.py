@@ -341,7 +341,7 @@ class TestDeployedFilesPresent:
         assert not result.passed
         assert ".github/prompts/missing.md" in result.details
 
-    def test_pass_git_unavailable_falls_back_gracefully(self, tmp_path, monkeypatch):
+    def test_fail_git_unavailable_falls_back_to_reporting_missing(self, tmp_path):
         """When git is not on PATH the filter falls back and missing files still fail.
 
         Ensures the safe-fallback path does not silently hide real drift when

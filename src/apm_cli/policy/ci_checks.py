@@ -182,7 +182,7 @@ def _filter_gitignored(project_root: Path, rel_paths: list[str]) -> list[str]:
         return [p for p in rel_paths if p not in ignored]
     except Exception:
         _logger.debug(
-            "Could not query gitignore status for %d path(s); treating all as present expectations",
+            "Could not query gitignore status for %d path(s); reporting all absent paths as missing",
             len(rel_paths),
         )
         return rel_paths
