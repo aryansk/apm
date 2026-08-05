@@ -75,7 +75,7 @@ Write-Host "[i] Using signtool: $SignToolPath"
 
 $TempCert = $null
 try {
-    $TempCert = [System.IO.Path]::GetTempFileName() + ".pfx"
+    $TempCert = Join-Path ([System.IO.Path]::GetTempPath()) ([System.IO.Path]::GetRandomFileName() + ".pfx")
     $certBytes = [System.Convert]::FromBase64String($env:WINDOWS_CERT_PFX)
     [System.IO.File]::WriteAllBytes($TempCert, $certBytes)
     Write-Host "[i] Certificate decoded to temporary path"
@@ -102,7 +102,7 @@ try {
         "sign",
         "/fd", "SHA256",
         "/td", "SHA256",
-        "/tr", "http://timestamp.digicert.com",
+        "/tr", "https://timestamp.digicert.com",
         "/f", $TempCert,
         "/p", $env:WINDOWS_CERT_PASSWORD,
         "/q"

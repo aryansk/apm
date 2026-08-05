@@ -15,6 +15,7 @@ from pathlib import Path
 import pytest
 
 from tests.workflow_contracts import (
+    WorkflowNode,
     load_workflow,
     workflow_job,
     workflow_step,
@@ -29,11 +30,11 @@ BUILD_STEP = "Build binary (Windows)"
 UPLOAD_STEP = "Upload binary as workflow artifact"
 
 
-def _workflow() -> dict:
+def _workflow() -> WorkflowNode:
     return load_workflow(WORKFLOW)
 
 
-def _assert_signing_step(workflow: dict) -> None:
+def _assert_signing_step(workflow: WorkflowNode) -> None:
     """Assert the Authenticode signing step is correctly configured."""
     job = workflow_job(workflow, "build-and-test")
     step = workflow_step(job, SIGNING_STEP)
@@ -54,7 +55,8 @@ def _assert_signing_step(workflow: dict) -> None:
     assert "sign-binary.ps1" in run_text, "signing step must invoke scripts/windows/sign-binary.ps1"
 
     # Must pass the certificate secret via env.
-    env: dict = step.get("env", {})
+    env = step.get("env", {})
+    assert isinstance(env, dict), f"signing step env must be a mapping, got {type(env)!r}"
     assert "WINDOWS_CERT_PFX" in env, "signing step env must include WINDOWS_CERT_PFX"
     assert "WINDOWS_CERT_PASSWORD" in env, "signing step env must include WINDOWS_CERT_PASSWORD"
 

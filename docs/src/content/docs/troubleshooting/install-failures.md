@@ -302,9 +302,9 @@ bootloader pattern that triggers ML-based AV heuristics, particularly on
 unsigned executables. This is a false positive -- the APM binary contains no
 malicious code.
 
-**Long-term fix:** APM releases from v0.28.1 onward ship with Authenticode
-code signatures. Signed binaries carry a trusted publisher identity and do not
-trigger these heuristics. Upgrade to the latest release.
+**Long-term fix:** Recent APM releases ship with Authenticode code signatures.
+Signed binaries carry a trusted publisher identity and do not trigger these
+heuristics. Upgrade to the latest release.
 
 **Workarounds for older releases or enterprise policies that block new
 downloads:**
@@ -329,7 +329,7 @@ downloads:**
    apm --version
    ```
 
-   Requires Python 3.10+. See [Installation](../installation/#from-source-or-pip).
+   Requires Python 3.10+. See [pip install](../../getting-started/installation/#pip-install).
 
 3. **Submit the binary to Microsoft** if your organisation needs the detection
    cleared for an older release: use the

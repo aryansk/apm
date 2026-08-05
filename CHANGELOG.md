@@ -43,6 +43,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Windows binary is now Authenticode-signed in the release workflow, eliminating
+  the `Trojan:Script/Wacatac.H!ml` false positive. Gated on `WINDOWS_CERT_PFX`
+  secret so fork builds remain unchanged. (#2435)
 - `apm install` now re-downloads an aliased dependency after its `ref:` changes
   in `apm.yml`. Previously the pinned-ref and already-resolved cache-reuse
   shortcuts skipped the fetch, so `apm_modules/<alias>/` and every primitive
