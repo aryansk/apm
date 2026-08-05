@@ -13,6 +13,7 @@ Exit-code contract (consumed by the ``apm audit --ci`` command):
 from __future__ import annotations
 
 import logging
+import subprocess
 from pathlib import Path
 from typing import TYPE_CHECKING, Sequence  # noqa: UP035
 
@@ -142,11 +143,62 @@ def _check_ref_consistency(
     )
 
 
+def _filter_gitignored(project_root: Path, rel_paths: list[str]) -> list[str]:
+    """Return only paths from rel_paths that are NOT gitignored.
+
+    A gitignored path is absent by design on a fresh clone and must not be
+    reported as a missing deployment.  Uses ``git check-ignore --stdin -z``
+    for reliable, gitignore-spec-compliant evaluation.
+
+    Falls back to returning the original list unchanged when git is not
+    available or when ``project_root`` is not inside a git repository, so
+    the behaviour reverts to the pre-fix state rather than silently passing.
+
+    Args:
+        project_root: Absolute path to the root of the git repository.
+        rel_paths: Paths relative to ``project_root`` to evaluate.
+
+    Returns:
+        The subset of ``rel_paths`` whose entries are NOT gitignored.
+    """
+    if not rel_paths:
+        return rel_paths
+    try:
+        from ..utils.git_env import get_git_executable, git_subprocess_env
+
+        git_exe = get_git_executable()
+        result = subprocess.run(
+            [git_exe, "check-ignore", "--stdin", "-z"],
+            input="\x00".join(rel_paths),
+            cwd=str(project_root),
+            env=git_subprocess_env(),
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        # git check-ignore exits 0 if at least one path is ignored, 1 if none
+        # are ignored, and 128 on fatal errors.  We only care about stdout.
+        ignored = {p for p in result.stdout.split("\x00") if p}
+        return [p for p in rel_paths if p not in ignored]
+    except Exception:
+        _logger.debug(
+            "Could not query gitignore status for %d path(s); treating all as present expectations",
+            len(rel_paths),
+        )
+        return rel_paths
+
+
 def _check_deployed_files_present(
     project_root: Path,
     lock: LockFile,
 ) -> CheckResult:
-    """Verify all files listed in lockfile deployed_files exist on disk."""
+    """Verify all files listed in lockfile deployed_files exist on disk.
+
+    Paths that are gitignored are considered absent by design (the repo owner
+    deliberately chose not to commit them) and are excluded from the missing
+    count.  This prevents false positives on fresh checkouts of repos that
+    gitignore one or more deploy directories.
+    """
     from ..integration.base_integrator import BaseIntegrator
 
     missing: list[str] = []
@@ -158,6 +210,9 @@ def _check_deployed_files_present(
             abs_path = project_root / rel_path
             if not abs_path.exists():
                 missing.append(rel_path)
+
+    if missing:
+        missing = _filter_gitignored(project_root, missing)
 
     if not missing:
         return CheckResult(

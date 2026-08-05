@@ -259,6 +259,118 @@ class TestDeployedFilesPresent:
         assert not result.passed
         assert ".github/prompts/missing.md" in result.details
 
+    def test_pass_gitignored_missing_file(self, tmp_path):
+        """A deploy path absent because it is gitignored must not count as missing.
+
+        Regression test for #2452: on a fresh checkout of a repo that gitignores
+        a deploy directory, deployed-files-present must exit green.
+        """
+        import subprocess
+
+        # Initialise a real git repo so git check-ignore works.
+        subprocess.run(
+            ["git", "init", "--initial-branch=main"], cwd=tmp_path, check=True, capture_output=True
+        )
+        subprocess.run(
+            ["git", "config", "user.email", "test@example.com"],
+            cwd=tmp_path,
+            check=True,
+            capture_output=True,
+        )
+        subprocess.run(
+            ["git", "config", "user.name", "Test"], cwd=tmp_path, check=True, capture_output=True
+        )
+        # Gitignore the deploy directory that APM would write to.
+        (tmp_path / ".gitignore").write_text(".agents/\n", encoding="utf-8")
+
+        _write_lockfile(
+            tmp_path,
+            textwrap.dedent("""\
+                lockfile_version: '1'
+                generated_at: '2025-01-01T00:00:00Z'
+                dependencies:
+                  - repo_url: owner/repo
+                    deployed_files:
+                      - .agents/skills/skill-a/SKILL.md
+                      - .agents/skills/skill-a
+            """),
+        )
+        from apm_cli.deps.lockfile import LockFile, get_lockfile_path
+
+        lock = LockFile.read(get_lockfile_path(tmp_path))
+        result = _check_deployed_files_present(tmp_path, lock)
+        assert result.passed, "deployed-files-present must pass when missing files are gitignored"
+
+    def test_fail_non_gitignored_missing_file(self, tmp_path):
+        """A deploy path that is missing and NOT gitignored must still fail.
+
+        Regression guard: the gitignore filter must not swallow genuine drift.
+        """
+        import subprocess
+
+        subprocess.run(
+            ["git", "init", "--initial-branch=main"], cwd=tmp_path, check=True, capture_output=True
+        )
+        subprocess.run(
+            ["git", "config", "user.email", "test@example.com"],
+            cwd=tmp_path,
+            check=True,
+            capture_output=True,
+        )
+        subprocess.run(
+            ["git", "config", "user.name", "Test"], cwd=tmp_path, check=True, capture_output=True
+        )
+        # .gitignore exists but does NOT cover the deploy path.
+        (tmp_path / ".gitignore").write_text("apm_modules/\n", encoding="utf-8")
+
+        _write_lockfile(
+            tmp_path,
+            textwrap.dedent("""\
+                lockfile_version: '1'
+                generated_at: '2025-01-01T00:00:00Z'
+                dependencies:
+                  - repo_url: owner/repo
+                    deployed_files:
+                      - .github/prompts/missing.md
+            """),
+        )
+        from apm_cli.deps.lockfile import LockFile, get_lockfile_path
+
+        lock = LockFile.read(get_lockfile_path(tmp_path))
+        result = _check_deployed_files_present(tmp_path, lock)
+        assert not result.passed
+        assert ".github/prompts/missing.md" in result.details
+
+    def test_pass_git_unavailable_falls_back_gracefully(self, tmp_path, monkeypatch):
+        """When git is not on PATH the filter falls back and missing files still fail.
+
+        Ensures the safe-fallback path does not silently hide real drift when
+        the git executable cannot be found.
+        """
+        from unittest.mock import patch
+
+        _write_lockfile(
+            tmp_path,
+            textwrap.dedent("""\
+                lockfile_version: '1'
+                generated_at: '2025-01-01T00:00:00Z'
+                dependencies:
+                  - repo_url: owner/repo
+                    deployed_files:
+                      - .github/prompts/absent.md
+            """),
+        )
+        from apm_cli.deps.lockfile import LockFile, get_lockfile_path
+
+        lock = LockFile.read(get_lockfile_path(tmp_path))
+        with patch(
+            "apm_cli.utils.git_env.get_git_executable",
+            side_effect=FileNotFoundError("git not found"),
+        ):
+            result = _check_deployed_files_present(tmp_path, lock)
+
+        assert not result.passed, "When git is unavailable, missing files must still be reported"
+
 
 # -- No orphaned packages ------------------------------------------
 
