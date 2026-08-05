@@ -64,6 +64,20 @@ try {
     # Rename the directory to have the platform-specific name
     Rename-Item "dist/apm" $BinaryName
 
+    # Authenticode-sign the binary when signing credentials are available.
+    # Signing is optional: builds without WINDOWS_CERT_PFX succeed unsigned.
+    if ($env:WINDOWS_CERT_PFX) {
+        Write-Host "Signing binary (Authenticode)..." -ForegroundColor Yellow
+        $env:BINARY_DIR = "dist/$BinaryName"
+        & pwsh scripts/windows/sign-binary.ps1
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "Signing failed with exit code $LASTEXITCODE" -ForegroundColor Red
+            exit $LASTEXITCODE
+        }
+    } else {
+        Write-Host "WINDOWS_CERT_PFX not set -- skipping Authenticode signing" -ForegroundColor Yellow
+    }
+
     # Test the binary (temporarily relax error preference so stderr from native
     # commands does not throw under $ErrorActionPreference = "Stop")
     Write-Host "Testing binary..." -ForegroundColor Yellow
