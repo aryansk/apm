@@ -947,7 +947,7 @@ def _run_compilation(
     default=None,
     help=f"Target platform (comma-separated). {target_help_fragment('compile')} "
     "'antigravity' (alias 'agy') deploys to .agents/ and is explicit-only -- not part of 'all'. "
-    "'all' excludes antigravity and experimental targets; "
+    "'all' excludes agent-skills, antigravity, experimental targets, and intellij; "
     "combine explicit-only targets when needed.",
 )
 @click.option(

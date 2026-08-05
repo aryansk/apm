@@ -167,6 +167,52 @@ def test_outdated_top_level_help_description_has_no_trailing_period():
     assert "Show outdated locked dependencies" in result.output
 
 
+def test_deps_update_target_help_uses_current_catalog():
+    """Regression for #2451: deps update --target must list catalog-driven targets.
+
+    The help string was previously hardcoded and stale.  After the fix it is
+    generated from target_help_fragment('update'), so targets added to the
+    catalog are automatically reflected.  This test asserts that a sampling of
+    targets that were absent in the old static string now appear.
+    """
+    result = CliRunner().invoke(cli, ["deps", "update", "--help"])
+
+    assert result.exit_code == 0
+    help_text = result.output
+    # Targets absent from the old hardcoded string
+    assert "grok-build" in help_text
+    assert "agents" in help_text
+    # Deprecation note directing users to apm update
+    assert "apm update" in help_text
+
+
+def test_compile_target_all_exclusion_lists_agent_skills_and_intellij():
+    """Regression for #2451: compile --target help must list agent-skills and intellij
+    as excluded from 'all', consistent with install --target help.
+    """
+    result = CliRunner().invoke(cli, ["compile", "--help"])
+
+    assert result.exit_code == 0
+    help_text = result.output
+    assert "agent-skills" in help_text
+    assert "intellij" in help_text
+    # The exclusion sentence must name both omitted targets
+    assert "excludes" in help_text
+
+
+def test_mcp_install_help_lists_target_global_and_trust_transitive():
+    """Regression for #2451: mcp install --help must enumerate --target, --global,
+    and --trust-transitive-mcp in its forwarded-options block.
+    """
+    result = CliRunner().invoke(cli, ["mcp", "install", "--help"])
+
+    assert result.exit_code == 0
+    help_text = result.output
+    assert "--target" in help_text
+    assert "--global" in help_text
+    assert "--trust-transitive-mcp" in help_text
+
+
 def test_script_run_header_uses_running_status_symbol():
     formatter = ScriptExecutionFormatter(use_color=False)
 
