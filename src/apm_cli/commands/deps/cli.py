@@ -925,6 +925,7 @@ def clean(dry_run: bool, yes: bool):
         "'antigravity' (alias 'agy') deploys to .agents/ and is explicit-only -- not part of 'all'. "
         "'all' excludes agent-skills, antigravity, experimental targets, and intellij; "
         "combine explicit-only targets when needed. "
+        "Experimental targets require their feature flags. "
         "Deprecated: use 'apm update --target' for the authoritative list."
     ),
 )

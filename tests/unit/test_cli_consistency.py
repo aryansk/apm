@@ -194,10 +194,9 @@ def test_compile_target_all_exclusion_lists_agent_skills_and_intellij():
 
     assert result.exit_code == 0
     help_text = result.output
-    assert "agent-skills" in help_text
-    assert "intellij" in help_text
-    # The exclusion sentence must name both omitted targets
-    assert "excludes" in help_text
+    # Assert the full exclusion sentence (normalize whitespace from help-text wrapping)
+    normalized = " ".join(help_text.split())
+    assert "excludes agent-skills, antigravity, experimental targets, and intellij" in normalized
 
 
 def test_mcp_install_help_lists_target_global_and_trust_transitive():
