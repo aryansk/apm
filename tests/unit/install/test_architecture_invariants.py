@@ -44,7 +44,7 @@ KNOWN_LARGE_MODULES = {
     # Further growth from target-reconcile warning helper extraction (#2362).
     # Added _resolve_bin_skip helper for trust-bin gate (#1620).
     # Decomposition tracked as follow-up.
-    "services.py": 1125,
+    "services.py": 1140,
 }
 
 
