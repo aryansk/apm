@@ -212,6 +212,77 @@ def test_mcp_install_help_lists_target_global_and_trust_transitive():
     assert "--trust-transitive-mcp" in help_text
 
 
+def test_mcp_install_help_forwarded_options_complete():
+    """Regression trap for FU-3: mcp install --help forwarded-options block must
+    enumerate all flags declared in the block, not just the three added in #2451.
+
+    This test prevents silent omission when new install flags are added: if a flag
+    appears in mcp.py's forwarded-options block it must appear in the rendered help.
+    """
+    result = CliRunner().invoke(cli, ["mcp", "install", "--help"])
+
+    assert result.exit_code == 0
+    help_text = result.output
+    # All flags currently declared in the forwarded-options block of mcp.py
+    expected_flags = [
+        "--transport",
+        "--url",
+        "--env",
+        "--header",
+        "--target",
+        "--registry",
+        "--mcp-version",
+        "--global",
+        "--trust-transitive-mcp",
+        "--dev",
+        "--dry-run",
+        "--force",
+        "--verbose",
+        "--no-policy",
+    ]
+    for flag in expected_flags:
+        assert flag in help_text, (
+            f"mcp install --help missing forwarded flag: {flag!r}. "
+            "Add it to the forwarded-options block in src/apm_cli/commands/mcp.py."
+        )
+
+
+def test_deps_update_target_help_values_catalog_sorted():
+    """FU-5 regression trap: the target values in deps update --target help must
+    appear in the same alphabetical order as the catalog generates via
+    target_help_fragment('update'), keeping CLI help and docs sort order in sync.
+    """
+    result = CliRunner().invoke(cli, ["deps", "update", "--help"])
+    assert result.exit_code == 0
+    normalized = " ".join(result.output.split())
+
+    # Locate the Values: ... fragment in the help text and check ordering within it
+    values_start = normalized.find("Values:")
+    assert values_start != -1, "Expected 'Values:' in deps update --help --target section"
+    values_segment = normalized[values_start:]
+
+    # Verify key alphabetical ordering pairs within the values fragment.
+    # These are derived from the catalog's sorted output (target_help_fragment sorts
+    # accepted_target_values alphabetically); any catalog-order regression fails here.
+    ordering_pairs = [
+        ("claude", "codex"),
+        ("codex", "copilot"),
+        ("grok-build", "intellij"),
+        ("intellij", "kiro"),
+        ("kiro", "opencode"),
+        ("opencode", "vscode"),
+        ("vscode", "windsurf"),
+    ]
+    for earlier, later in ordering_pairs:
+        assert earlier in values_segment and later in values_segment, (
+            f"deps update --help missing one of: {earlier!r}, {later!r} in Values fragment"
+        )
+        assert values_segment.index(earlier) < values_segment.index(later), (
+            f"Sort order mismatch: '{earlier}' must precede '{later}' "
+            "(catalog-driven alphabetical order)."
+        )
+
+
 def test_compile_and_deps_exclusion_clause_matches_catalog():
     """Regression: 'all' exclusion clause in compile and deps help must match
     target_all_exclusion_help(), not a hand-maintained static string.
