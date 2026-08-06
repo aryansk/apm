@@ -930,6 +930,6 @@ def test_bin_deployment_defaults_to_deny_in_non_interactive_context() -> None:
     """Per-invocation consent: non-TTY defaults to deny; explicit opt-in overrides."""
     assert_spec_contains(
         "MUST deny",
-        "stdout is not connected to a terminal",
+        "standard output is not connected to a terminal",
         "explicitly opted in for that invocation",
     )
