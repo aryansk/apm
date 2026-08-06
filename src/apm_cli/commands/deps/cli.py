@@ -926,7 +926,7 @@ def clean(dry_run: bool, yes: bool):
         "'all' excludes agent-skills, antigravity, experimental targets, and intellij; "
         "combine explicit-only targets when needed. "
         "Experimental targets require their feature flags. "
-        "Deprecated: use 'apm update --target' for the authoritative list."
+        "Deprecated: run 'apm update --target' instead."
     ),
 )
 @click.option(
