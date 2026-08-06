@@ -77,8 +77,31 @@ $TempCert = $null
 try {
     $TempCert = Join-Path ([System.IO.Path]::GetTempPath()) ([System.IO.Path]::GetRandomFileName() + ".pfx")
     $certBytes = [System.Convert]::FromBase64String($env:WINDOWS_CERT_PFX)
-    [System.IO.File]::WriteAllBytes($TempCert, $certBytes)
-    Write-Host "[i] Certificate decoded to temporary path"
+
+    # Write PFX with exclusive lock (FileShare.None) so no other process can
+    # open the file during the write window.
+    $fs = [System.IO.File]::Open(
+        $TempCert,
+        [System.IO.FileMode]::CreateNew,
+        [System.IO.FileAccess]::Write,
+        [System.IO.FileShare]::None
+    )
+    try { $fs.Write($certBytes, 0, $certBytes.Length) }
+    finally { $fs.Dispose() }
+
+    # Restrict ACL to current user only: disable ACE inheritance and remove
+    # any inherited rules, then grant FullControl to this process's identity.
+    $acl = Get-Acl -Path $TempCert
+    $acl.SetAccessRuleProtection($true, $false)
+    $rule = [System.Security.AccessControl.FileSystemAccessRule]::new(
+        [System.Security.Principal.WindowsIdentity]::GetCurrent().Name,
+        'FullControl',
+        [System.Security.AccessControl.AccessControlType]::Allow
+    )
+    $acl.SetAccessRule($rule)
+    Set-Acl -Path $TempCert -AclObject $acl
+
+    Write-Host "[i] Certificate decoded to temporary path (owner-only ACL applied)"
 
     # -- Collect targets: apm.exe + all bundled DLLs -------------------------
 

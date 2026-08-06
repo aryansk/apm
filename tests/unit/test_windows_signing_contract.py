@@ -136,3 +136,44 @@ def test_signing_step_requires_password_env() -> None:
 
     with pytest.raises(AssertionError, match="WINDOWS_CERT_PASSWORD"):
         _assert_signing_step(workflow)
+
+
+# ---------------------------------------------------------------------------
+# Static code contracts for scripts/windows/sign-binary.ps1
+# ---------------------------------------------------------------------------
+
+SIGN_SCRIPT = ROOT / "scripts" / "windows" / "sign-binary.ps1"
+
+
+def _sign_script_text() -> str:
+    return SIGN_SCRIPT.read_text(encoding="utf-8")
+
+
+def test_sign_script_restricts_acl() -> None:
+    """sign-binary.ps1 must call SetAccessRuleProtection to disable ACL inheritance.
+
+    Regression guard for the FU-3a supply-chain finding: the temp PFX file
+    must not be world-readable on shared runners. SetAccessRuleProtection with
+    ($true, $false) removes inherited rules and ensures only an explicit
+    current-user grant remains.
+    """
+    text = _sign_script_text()
+    assert "SetAccessRuleProtection" in text, (
+        "sign-binary.ps1 must call SetAccessRuleProtection to restrict the "
+        "temporary PFX file to the current user only -- world-readable temp "
+        "files expose the private key on shared runners"
+    )
+
+
+def test_sign_script_uses_exclusive_file_lock() -> None:
+    """sign-binary.ps1 must use FileShare.None when writing the temp PFX.
+
+    Ensures no concurrent reader can observe the private key bytes during
+    the file-write window, even on a shared runner.
+    """
+    text = _sign_script_text()
+    assert "FileShare" in text, (
+        "sign-binary.ps1 must open the temp PFX with FileShare.None (exclusive "
+        "lock) to prevent a concurrent process from reading the private key "
+        "bytes during the write window"
+    )
