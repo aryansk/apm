@@ -371,8 +371,61 @@ class TestDeployedFilesPresent:
 
         assert not result.passed, "When git is unavailable, missing files must still be reported"
 
+    def test_partial_filter_gitignored_absent_tracked_absent_mix(self, tmp_path):
+        """Some deployed paths gitignored and absent; others absent but NOT gitignored.
 
-# -- No orphaned packages ------------------------------------------
+        Regression guard for the set-subtraction logic in _filter_gitignored():
+        when a lockfile lists both a gitignored path and a tracked path that
+        are both missing, only the non-gitignored path should appear in the
+        failure details.
+        """
+        import subprocess
+
+        subprocess.run(
+            ["git", "init", "--initial-branch=main"],
+            cwd=tmp_path,
+            check=True,
+            capture_output=True,
+        )
+        subprocess.run(
+            ["git", "config", "user.email", "test@example.com"],
+            cwd=tmp_path,
+            check=True,
+            capture_output=True,
+        )
+        subprocess.run(
+            ["git", "config", "user.name", "Test"],
+            cwd=tmp_path,
+            check=True,
+            capture_output=True,
+        )
+        # Gitignore only the .agents/ directory; .github/prompts/ is tracked.
+        (tmp_path / ".gitignore").write_text(".agents/\n", encoding="utf-8")
+
+        _write_lockfile(
+            tmp_path,
+            textwrap.dedent("""\
+                lockfile_version: '1'
+                generated_at: '2025-01-01T00:00:00Z'
+                dependencies:
+                  - repo_url: owner/repo
+                    deployed_files:
+                      - .agents/skills/skill-a/SKILL.md
+                      - .github/prompts/tracked-prompt.md
+            """),
+        )
+        from apm_cli.deps.lockfile import LockFile, get_lockfile_path
+
+        lock = LockFile.read(get_lockfile_path(tmp_path))
+        result = _check_deployed_files_present(tmp_path, lock)
+
+        assert not result.passed, "Check must fail when a non-gitignored file is absent"
+        assert ".github/prompts/tracked-prompt.md" in result.details, (
+            "Non-gitignored missing path must appear in failure details"
+        )
+        assert ".agents/skills/skill-a/SKILL.md" not in result.details, (
+            "Gitignored path must be filtered out of failure details"
+        )
 
 
 class TestNoOrphans:

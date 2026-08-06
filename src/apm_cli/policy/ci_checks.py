@@ -13,7 +13,6 @@ Exit-code contract (consumed by the ``apm audit --ci`` command):
 from __future__ import annotations
 
 import logging
-import subprocess
 from pathlib import Path
 from typing import TYPE_CHECKING, Sequence  # noqa: UP035
 
@@ -164,6 +163,8 @@ def _filter_gitignored(project_root: Path, rel_paths: list[str]) -> list[str]:
     if not rel_paths:
         return rel_paths
     try:
+        import subprocess
+
         from ..utils.git_env import get_git_executable, git_subprocess_env
 
         git_exe = get_git_executable()
@@ -180,7 +181,7 @@ def _filter_gitignored(project_root: Path, rel_paths: list[str]) -> list[str]:
         # are ignored, and 128 on fatal errors.  We only care about stdout.
         ignored = {p for p in result.stdout.split("\x00") if p}
         return [p for p in rel_paths if p not in ignored]
-    except Exception:
+    except (OSError, subprocess.SubprocessError, ImportError):
         _logger.debug(
             "Could not query gitignore status for %d path(s); reporting all absent paths as missing",
             len(rel_paths),
