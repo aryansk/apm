@@ -1,6 +1,6 @@
 ---
 title: "Install failures"
-description: "Diagnose and recover from apm install failures: auth, network, lockfile, cache, and partial installs."
+description: "Diagnose and recover from apm install failures: auth, network, lockfile, cache, partial installs, and Windows Defender false positives."
 sidebar:
   order: 2
 ---

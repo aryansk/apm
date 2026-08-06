@@ -124,3 +124,15 @@ def test_signing_step_order() -> None:
 
     with pytest.raises(AssertionError, match="order"):
         _assert_signing_step(workflow)
+
+
+def test_signing_step_requires_password_env() -> None:
+    """Removing WINDOWS_CERT_PASSWORD from env must fail the contract."""
+    workflow = deepcopy(_workflow())
+    step = workflow_step(workflow_job(workflow, "build-and-test"), SIGNING_STEP)
+    env = step.get("env", {})
+    assert isinstance(env, dict), "env must be a mapping for this mutation test"
+    env.pop("WINDOWS_CERT_PASSWORD", None)
+
+    with pytest.raises(AssertionError, match="WINDOWS_CERT_PASSWORD"):
+        _assert_signing_step(workflow)

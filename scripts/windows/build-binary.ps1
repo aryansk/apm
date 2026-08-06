@@ -67,15 +67,15 @@ try {
     # Authenticode-sign the binary when signing credentials are available.
     # Signing is optional: builds without WINDOWS_CERT_PFX succeed unsigned.
     if ($env:WINDOWS_CERT_PFX) {
-        Write-Host "Signing binary (Authenticode)..." -ForegroundColor Yellow
+        Write-Host "[*] Signing binary (Authenticode)..."
         $env:BINARY_DIR = "dist/$BinaryName"
         & pwsh scripts/windows/sign-binary.ps1
         if ($LASTEXITCODE -ne 0) {
-            Write-Host "Signing failed with exit code $LASTEXITCODE" -ForegroundColor Red
+            Write-Host "[x] Signing failed with exit code $LASTEXITCODE"
             exit $LASTEXITCODE
         }
     } else {
-        Write-Host "WINDOWS_CERT_PFX not set -- skipping Authenticode signing" -ForegroundColor Yellow
+        Write-Host "[i] WINDOWS_CERT_PFX not set -- skipping Authenticode signing"
     }
 
     # Test the binary (temporarily relax error preference so stderr from native
