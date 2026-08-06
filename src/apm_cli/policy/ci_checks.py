@@ -211,14 +211,22 @@ def _check_deployed_files_present(
             if not abs_path.exists():
                 missing.append(rel_path)
 
+    gitignored_skipped = False
     if missing:
-        missing = _filter_gitignored(project_root, missing)
+        filtered = _filter_gitignored(project_root, missing)
+        gitignored_skipped = len(filtered) < len(missing)
+        missing = filtered
 
     if not missing:
+        msg = (
+            "All deployed files present on disk (gitignored paths skipped)"
+            if gitignored_skipped
+            else "All deployed files present on disk"
+        )
         return CheckResult(
             name="deployed-files-present",
             passed=True,
-            message="All deployed files present on disk",
+            message=msg,
         )
     return CheckResult(
         name="deployed-files-present",

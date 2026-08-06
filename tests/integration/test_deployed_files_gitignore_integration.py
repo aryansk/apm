@@ -82,7 +82,9 @@ class TestDeployedFilesGitignoreFiltering:
             "deployed-files-present must pass when absent paths are gitignored; "
             f"got: {result.message}"
         )
-        assert "All deployed files present" in result.message
+        assert "gitignored paths skipped" in result.message, (
+            f"success message must indicate gitignored paths were skipped; got: {result.message}"
+        )
 
     def test_absent_non_gitignored_deploy_path_fails_check(self, tmp_path: Path) -> None:
         """A deployed path absent and NOT gitignored must still fail.
