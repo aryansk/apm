@@ -929,7 +929,6 @@ def test_project_scoped_native_hook_command_is_portably_anchored() -> None:
 def test_bin_deployment_defaults_to_deny_in_non_interactive_context() -> None:
     """Per-invocation consent: non-TTY defaults to deny; explicit opt-in overrides."""
     assert_spec_contains(
-        "MUST deny",
-        "standard output is not connected to a terminal",
+        "MUST deny\nthat deployment by default when its standard output is not connected to a",
         "explicitly opted in for that invocation",
     )
