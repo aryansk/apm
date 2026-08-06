@@ -1076,11 +1076,11 @@ def _handle_mcp_install(  # noqa: PLR0913
     "trust_bin",
     default=None,
     help=(
-        "Consent posture for bin/ executable deployment. "
-        "--trust-bin explicitly approves bin/ deployment (suppresses the "
-        "trust-posture warning). --no-trust-bin explicitly skips bin/ "
-        "deployment even when policy allows it. Default (neither flag): "
-        "deploys bin/ but emits a prominent trust-posture warning."
+        "Allow or skip bin/ executable deployment for this invocation. "
+        "--trust-bin deploys bin/ executables (suppresses the trust warning). "
+        "--no-trust-bin skips bin/ deployment even when policy allows it. "
+        "Default: deploys bin/ but emits a warning; non-interactive contexts "
+        "skip bin/ by default. Use 'apm approve' for persistent per-package trust."
     ),
 )
 @click.option(

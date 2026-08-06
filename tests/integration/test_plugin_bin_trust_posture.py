@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
+from unittest.mock import patch
 
 import pytest
 
@@ -19,14 +20,19 @@ pytestmark = pytest.mark.skipif(os.name != "posix", reason="POSIX mode hardening
 
 
 class _RecordingLogger:
-    """Capture ``progress()`` messages for trust-posture assertions."""
+    """Capture ``progress()`` and ``warning()`` messages for trust-posture assertions."""
 
     def __init__(self) -> None:
         self.progress_messages: list[str] = []
+        self.warning_messages: list[str] = []
 
     def progress(self, message: str, **_kwargs: Any) -> None:
         """Record a progress line."""
         self.progress_messages.append(message)
+
+    def warning(self, message: str, **_kwargs: Any) -> None:
+        """Record a warning line."""
+        self.warning_messages.append(message)
 
 
 def _write_marketplace_plugin(package_dir: Path, *, manifest_name: str) -> tuple[PackageInfo, Path]:
@@ -72,20 +78,20 @@ def test_trust_bin_true_deploys_without_warning(tmp_path: Path) -> None:
     )
     logger = _RecordingLogger()
 
-    result = SkillIntegrator().integrate_package_skill(
-        package_info,
-        project_root,
-        scope=InstallScope.USER,
-        logger=logger,
-        trust_bin=True,
-    )
+    with patch("sys.stdout") as mock_stdout:
+        mock_stdout.isatty.return_value = True
+        result = SkillIntegrator().integrate_package_skill(
+            package_info,
+            project_root,
+            scope=InstallScope.USER,
+            logger=logger,
+            trust_bin=True,
+        )
 
     deployed_bin = project_root / ".claude" / "skills" / "trusted-tool" / "bin" / "tool"
     assert result.bin_deployed > 0
     assert deployed_bin.is_file()
-    assert not any(
-        "invoked without confirmation" in message for message in logger.progress_messages
-    )
+    assert not logger.warning_messages
 
 
 def test_trust_bin_false_skips_with_not_trusted_reason(tmp_path: Path) -> None:
@@ -113,7 +119,7 @@ def test_trust_bin_false_skips_with_not_trusted_reason(tmp_path: Path) -> None:
 
 
 def test_trust_bin_none_deploys_with_warning(tmp_path: Path) -> None:
-    """Default trust posture should deploy bin/ and emit the acknowledgement warning."""
+    """Default trust posture in TTY should deploy bin/ and emit the warning."""
     project_root = tmp_path / "home"
     project_root.mkdir()
     (project_root / ".claude").mkdir()
@@ -123,18 +129,45 @@ def test_trust_bin_none_deploys_with_warning(tmp_path: Path) -> None:
     )
     logger = _RecordingLogger()
 
-    result = SkillIntegrator().integrate_package_skill(
-        package_info,
-        project_root,
-        scope=InstallScope.USER,
-        logger=logger,
-        trust_bin=None,
-    )
+    with patch("sys.stdout") as mock_stdout:
+        mock_stdout.isatty.return_value = True
+        result = SkillIntegrator().integrate_package_skill(
+            package_info,
+            project_root,
+            scope=InstallScope.USER,
+            logger=logger,
+            trust_bin=None,
+        )
 
     deployed_bin = project_root / ".claude" / "skills" / "prompted-tool" / "bin" / "tool"
     assert result.bin_deployed > 0
     assert deployed_bin.is_file()
-    assert any("invoked without confirmation" in message for message in logger.progress_messages)
+    assert any("adds executables to Claude Code's PATH" in msg for msg in logger.warning_messages)
+
+
+def test_trust_bin_none_non_tty_skips(tmp_path: Path) -> None:
+    """Default trust posture in non-TTY (CI) should skip bin/ deployment."""
+    project_root = tmp_path / "home"
+    project_root.mkdir()
+    (project_root / ".claude").mkdir()
+    package_info, _source_bin = _write_marketplace_plugin(
+        tmp_path / "packages" / "ci-tool",
+        manifest_name="MyOwner/CiTool",
+    )
+
+    with patch("sys.stdout") as mock_stdout:
+        mock_stdout.isatty.return_value = False
+        result = SkillIntegrator().integrate_package_skill(
+            package_info,
+            project_root,
+            scope=InstallScope.USER,
+            trust_bin=None,
+        )
+
+    deployed_bin = project_root / ".claude" / "skills" / "ci-tool" / "bin" / "tool"
+    assert result.bin_deployed == 0
+    assert result.bin_skipped_reason == "not_trusted"
+    assert not deployed_bin.exists()
 
 
 def test_log_bin_status_not_trusted() -> None:

@@ -1585,8 +1585,16 @@ class SkillIntegrator(BaseIntegrator):
         layer can surface a hint.  Policy-deny and "no bin/ at all" return
         ``None`` -- they are intentional, not traps.
         """
+        import sys
+
         from apm_cli.core.scope import InstallScope
         from apm_cli.utils.path_security import validate_path_segments
+
+        # Non-interactive consent: in piped/CI contexts, skip bin/ by default.
+        # The caller sets skip_bin=True for explicit --no-trust-bin; this guard
+        # handles the implicit case where no flag was passed and output is not a TTY.
+        if trust_bin is None and not sys.stdout.isatty():
+            return [], "not_trusted"
 
         bin_dir = package_info.install_path / "bin"
         if not bin_dir.is_dir():
@@ -1645,11 +1653,9 @@ class SkillIntegrator(BaseIntegrator):
         # knows executables are on Claude Code's PATH.
         if deployed and trust_bin is None and logger:
             canonical = package_info.get_canonical_dependency_string()
-            logger.progress(
-                f"Plugin '{canonical}' deploys executables to Claude Code's PATH "
-                "(invoked without confirmation). "
-                "Pass --trust-bin to acknowledge, or --no-trust-bin to skip bin/ deployment.",
-                symbol="warning",
+            logger.warning(
+                f"Plugin '{canonical}' adds executables to Claude Code's PATH. "
+                "Pass --trust-bin to allow, or --no-trust-bin to skip bin/ deployment.",
             )
 
         return deployed, None
