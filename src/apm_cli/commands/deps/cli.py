@@ -12,7 +12,7 @@ import click
 from ...constants import APM_MODULES_DIR, APM_YML_FILENAME, SKILL_MD_FILENAME
 from ...core.command_logger import CommandLogger
 from ...core.project_name import DEFAULT_BOOTSTRAP_PROJECT_NAME
-from ...core.target_catalog import target_help_fragment
+from ...core.target_catalog import target_all_exclusion_help, target_help_fragment
 from ...core.target_detection import TargetParamType
 from ...deps.lockfile import LockedDependency
 from ...models.apm_package import APMPackage
@@ -923,7 +923,7 @@ def clean(dry_run: bool, yes: bool):
         f"Target platform (comma-separated). {target_help_fragment('update')} "
         "'agent-skills' deploys to .agents/skills/ (cross-client). "
         "'antigravity' (alias 'agy') deploys to .agents/ and is explicit-only -- not part of 'all'. "
-        "'all' excludes agent-skills, antigravity, experimental targets, and intellij; "
+        f"{target_all_exclusion_help()}; "
         "combine explicit-only targets when needed. "
         "Experimental targets require their feature flags. "
         "Deprecated: run 'apm update --target' instead."

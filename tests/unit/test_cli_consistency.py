@@ -212,6 +212,32 @@ def test_mcp_install_help_lists_target_global_and_trust_transitive():
     assert "--trust-transitive-mcp" in help_text
 
 
+def test_compile_and_deps_exclusion_clause_matches_catalog():
+    """Regression: 'all' exclusion clause in compile and deps help must match
+    target_all_exclusion_help(), not a hand-maintained static string.
+
+    Adding a new explicit-only or mcp-only target to the catalog must automatically
+    update both help strings; this test catches any desync.
+    """
+    from apm_cli.core.target_catalog import target_all_exclusion_help
+
+    expected_clause = target_all_exclusion_help()
+
+    compile_result = CliRunner().invoke(cli, ["compile", "--help"])
+    assert compile_result.exit_code == 0
+    compile_normalized = " ".join(compile_result.output.split())
+    assert expected_clause in compile_normalized, (
+        f"compile --help exclusion clause mismatch; expected: {expected_clause!r}"
+    )
+
+    deps_result = CliRunner().invoke(cli, ["deps", "update", "--help"])
+    assert deps_result.exit_code == 0
+    deps_normalized = " ".join(deps_result.output.split())
+    assert expected_clause in deps_normalized, (
+        f"deps update --help exclusion clause mismatch; expected: {expected_clause!r}"
+    )
+
+
 def test_script_run_header_uses_running_status_symbol():
     formatter = ScriptExecutionFormatter(use_color=False)
 
