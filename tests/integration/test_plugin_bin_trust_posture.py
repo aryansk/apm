@@ -6,7 +6,6 @@ import os
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
-from unittest.mock import patch
 
 import pytest
 
@@ -78,15 +77,13 @@ def test_trust_bin_true_deploys_without_warning(tmp_path: Path) -> None:
     )
     logger = _RecordingLogger()
 
-    with patch("sys.stdout") as mock_stdout:
-        mock_stdout.isatty.return_value = True
-        result = SkillIntegrator().integrate_package_skill(
-            package_info,
-            project_root,
-            scope=InstallScope.USER,
-            logger=logger,
-            trust_bin=True,
-        )
+    result = SkillIntegrator().integrate_package_skill(
+        package_info,
+        project_root,
+        scope=InstallScope.USER,
+        logger=logger,
+        trust_bin=True,
+    )
 
     deployed_bin = project_root / ".claude" / "skills" / "trusted-tool" / "bin" / "tool"
     assert result.bin_deployed > 0
@@ -129,15 +126,13 @@ def test_trust_bin_none_deploys_with_warning(tmp_path: Path) -> None:
     )
     logger = _RecordingLogger()
 
-    with patch("sys.stdout") as mock_stdout:
-        mock_stdout.isatty.return_value = True
-        result = SkillIntegrator().integrate_package_skill(
-            package_info,
-            project_root,
-            scope=InstallScope.USER,
-            logger=logger,
-            trust_bin=None,
-        )
+    result = SkillIntegrator().integrate_package_skill(
+        package_info,
+        project_root,
+        scope=InstallScope.USER,
+        logger=logger,
+        trust_bin=None,
+    )
 
     deployed_bin = project_root / ".claude" / "skills" / "prompted-tool" / "bin" / "tool"
     assert result.bin_deployed > 0
@@ -145,29 +140,19 @@ def test_trust_bin_none_deploys_with_warning(tmp_path: Path) -> None:
     assert any("adds executables to Claude Code's PATH" in msg for msg in logger.warning_messages)
 
 
-def test_trust_bin_none_non_tty_skips(tmp_path: Path) -> None:
-    """Default trust posture in non-TTY (CI) should skip bin/ deployment."""
-    project_root = tmp_path / "home"
-    project_root.mkdir()
-    (project_root / ".claude").mkdir()
-    package_info, _source_bin = _write_marketplace_plugin(
-        tmp_path / "packages" / "ci-tool",
-        manifest_name="MyOwner/CiTool",
-    )
+def test_trust_bin_none_non_tty_skips() -> None:
+    """_resolve_bin_skip: non-interactive + no flag -> skip with not_trusted."""
+    skip, reason = _resolve_bin_skip(True, None, non_interactive=True)
 
-    with patch("sys.stdout") as mock_stdout:
-        mock_stdout.isatty.return_value = False
-        result = SkillIntegrator().integrate_package_skill(
-            package_info,
-            project_root,
-            scope=InstallScope.USER,
-            trust_bin=None,
-        )
+    assert skip is True
+    assert reason == "not_trusted"
 
-    deployed_bin = project_root / ".claude" / "skills" / "ci-tool" / "bin" / "tool"
-    assert result.bin_deployed == 0
-    assert result.bin_skipped_reason == "not_trusted"
-    assert not deployed_bin.exists()
+
+def test_trust_bin_none_tty_allows() -> None:
+    """_resolve_bin_skip: interactive + no flag -> allow (warning emitted by deployer)."""
+    skip, reason = _resolve_bin_skip(True, None, non_interactive=False)
+    assert skip is False
+    assert reason is None
 
 
 def test_log_bin_status_not_trusted() -> None:

@@ -217,15 +217,23 @@ def _warn_target_reconcile_failure(
 def _resolve_bin_skip(
     bin_approved: bool,
     trust_bin: bool | None,
+    *,
+    non_interactive: bool = False,
 ) -> tuple[bool, str | None]:
     """Combine the ``allowExecutables`` gate with the ``--trust-bin`` flag.
 
     Returns ``(skip_bin, bin_skip_reason_override)`` for
     ``integrate_package_skill``.
+
+    When *non_interactive* is ``True`` (stdout is not a TTY) and *trust_bin*
+    is ``None`` (no explicit flag), bin/ deployment is skipped to preserve
+    the fail-closed posture in CI and piped contexts.
     """
     if not bin_approved:
         return True, "not_approved"
     if trust_bin is False:
+        return True, "not_trusted"
+    if trust_bin is None and non_interactive:
         return True, "not_trusted"
     return False, None
 
@@ -574,7 +582,12 @@ def integrate_package_primitives(  # noqa: PLR0913
 
     # Determine effective bin/ skip and reason. The ``allowExecutables``
     # gate and ``--trust-bin`` / ``--no-trust-bin`` are independent gates.
-    _skip_bin, _bin_skip_reason_override = _resolve_bin_skip(_bin_approved, trust_bin)
+    # In non-interactive contexts (piped output, CI) deny bin/ by default.
+    import sys
+
+    _skip_bin, _bin_skip_reason_override = _resolve_bin_skip(
+        _bin_approved, trust_bin, non_interactive=not sys.stdout.isatty()
+    )
 
     skill_result = integrators.skill.integrate_package_skill(
         package_info,
