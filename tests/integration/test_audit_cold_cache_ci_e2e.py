@@ -366,13 +366,12 @@ def test_deployed_files_present_passes_when_gitignored_paths_absent_even_if_drif
     # on whether self-hydration succeeds in this environment). Either way the
     # deployed-files-present check itself must pass.
     audit_args = (*_AUDIT_BASE_ARGS, "--format", "json")
-    result = scenario.runner.run_sequence(
-        (audit_args,),
-        expected_returncodes=(0, 1),
+    result = scenario.runner.run(
+        audit_args,
         scenario_id="gitignored-absent-deployed-fresh-checkout",
         cwd=scenario.project_root,
         env=scenario.environment,
-    )[0]
+    )
     payload = json.loads(result.stdout)
     deployed_check = _check(payload, "deployed-files-present")
     assert deployed_check["passed"] is True, (
