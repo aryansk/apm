@@ -132,12 +132,12 @@ def _check_ref_consistency(
             message="All dependency refs match lockfile",
         )
     repair_command = "apm install --update" if requires_update else "apm install"
+    n = len(mismatches)
+    noun = "mismatch" if n == 1 else "mismatches"
     return CheckResult(
         name="ref-consistency",
         passed=False,
-        message=(
-            f"{len(mismatches)} ref mismatch(es) -- run '{repair_command}' to update lockfile"
-        ),
+        message=(f"{n} ref {noun} -- run '{repair_command}' to update lockfile"),
         details=mismatches,
     )
 
@@ -182,7 +182,7 @@ def _filter_gitignored(project_root: Path, rel_paths: list[str]) -> list[str]:
         ignored = {p for p in result.stdout.split("\x00") if p}
         return [p for p in rel_paths if p not in ignored]
     except (OSError, subprocess.SubprocessError, ImportError):
-        _logger.debug(
+        _logger.warning(
             "Could not query gitignore status for %d path(s); reporting all absent paths as missing",
             len(rel_paths),
         )
@@ -229,10 +229,12 @@ def _check_deployed_files_present(
             passed=True,
             message=msg,
         )
+    n = len(missing)
+    noun = "file" if n == 1 else "files"
     return CheckResult(
         name="deployed-files-present",
         passed=False,
-        message=(f"{len(missing)} deployed file(s) missing -- run 'apm install' to restore"),
+        message=(f"{n} deployed {noun} missing -- run 'apm install' to restore"),
         details=missing,
     )
 
