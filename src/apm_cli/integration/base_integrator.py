@@ -691,6 +691,12 @@ class BaseIntegrator:
         # "single pass, O(1) per path" property from the original
         # component_map approach while supporting multi-level roots like
         # .config/opencode/.
+        #
+        # Cross-target hooks/skills prefixes are registered in the trie too
+        # so a deeper prefix (e.g. ``.copilot/hooks/``) wins over a shallow
+        # catch-all prefix from another primitive (e.g. the user-scope
+        # Copilot instructions root ``.copilot/``). Without this, hook paths
+        # under a catch-all root would be misrouted and never cleaned up.
         trie: dict = {}
         for prefix, bucket_key in prefix_map.items():
             segments = [s for s in prefix.split("/") if s]
@@ -702,6 +708,17 @@ class BaseIntegrator:
                     node[segment] = child
                 node = child
             node["_bucket"] = bucket_key
+        for prefix, bucket_key in ((skill_tuple, "skills"), (hook_tuple, "hooks")):
+            for cross_prefix in prefix:
+                segments = [s for s in cross_prefix.split("/") if s]
+                node = trie
+                for segment in segments:
+                    child = node.get(segment)
+                    if child is None:
+                        child = {}
+                        node[segment] = child
+                    node = child
+                node["_bucket"] = bucket_key
 
         for p in managed_files:
             # Walk the trie; keep the deepest bucket match (longest prefix).
