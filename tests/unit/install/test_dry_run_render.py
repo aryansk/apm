@@ -38,6 +38,12 @@ def _make_mcp_dep(name: str = "my-server") -> MagicMock:
     return dep
 
 
+def _make_lsp_dep(name: str = "gopls") -> MagicMock:
+    dep = MagicMock()
+    dep.__str__ = lambda self: name
+    return dep
+
+
 # ---------------------------------------------------------------------------
 # APM and MCP dependency rendering
 # ---------------------------------------------------------------------------
@@ -125,6 +131,70 @@ class TestRenderApmDeps:
 
         all_calls = " ".join(str(c) for c in logger.progress.call_args_list)
         assert "MCP dependencies" in all_calls
+
+    def test_lsp_deps_rendered(self, tmp_path: Path) -> None:
+        """LSP deps block is rendered when should_install_mcp=True and lsp_deps non-empty."""
+        logger = _make_logger()
+        dep = _make_lsp_dep("gopls")
+
+        with patch("apm_cli.deps.lockfile.LockFile.read", side_effect=Exception):
+            render_and_exit(
+                logger=logger,
+                should_install_apm=False,
+                apm_deps=[],
+                mcp_deps=[],
+                dev_apm_deps=[],
+                should_install_mcp=True,
+                update=False,
+                lsp_deps=[dep],
+                apm_dir=tmp_path,
+            )
+
+        all_calls = " ".join(str(c) for c in logger.progress.call_args_list)
+        assert "LSP dependencies" in all_calls
+        assert "gopls" in all_calls
+
+    def test_lsp_only_deps_not_reported_empty(self, tmp_path: Path) -> None:
+        """An LSP-only manifest must not report 'No dependencies found in apm.yml'."""
+        logger = _make_logger()
+        dep = _make_lsp_dep("gopls")
+
+        with patch("apm_cli.deps.lockfile.LockFile.read", side_effect=Exception):
+            render_and_exit(
+                logger=logger,
+                should_install_apm=False,
+                apm_deps=[],
+                mcp_deps=[],
+                dev_apm_deps=[],
+                should_install_mcp=True,
+                update=False,
+                lsp_deps=[dep],
+                apm_dir=tmp_path,
+            )
+
+        all_calls = " ".join(str(c) for c in logger.progress.call_args_list)
+        assert "No dependencies" not in all_calls
+
+    def test_lsp_deps_not_rendered_when_mcp_disabled(self, tmp_path: Path) -> None:
+        """LSP block is skipped when should_install_mcp=False (APM-only mode)."""
+        logger = _make_logger()
+        dep = _make_lsp_dep("gopls")
+
+        with patch("apm_cli.deps.lockfile.LockFile.read", side_effect=Exception):
+            render_and_exit(
+                logger=logger,
+                should_install_apm=True,
+                apm_deps=[],
+                mcp_deps=[],
+                dev_apm_deps=[],
+                should_install_mcp=False,
+                update=False,
+                lsp_deps=[dep],
+                apm_dir=tmp_path,
+            )
+
+        all_calls = " ".join(str(c) for c in logger.progress.call_args_list)
+        assert "LSP dependencies" not in all_calls
 
     def test_no_deps_shows_empty_message(self, tmp_path: Path) -> None:
         """When all dep lists are empty the 'No dependencies found' message is shown (line 53)."""

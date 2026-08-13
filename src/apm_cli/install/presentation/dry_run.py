@@ -25,6 +25,7 @@ def render_and_exit(
     dev_apm_deps: Sequence[Any],
     should_install_mcp: bool,
     update: bool,
+    lsp_deps: Sequence[Any] | None = None,
     only_packages: Sequence[str] | None = None,
     apm_dir: Path,
 ) -> None:
@@ -49,7 +50,12 @@ def render_and_exit(
         for dep in mcp_deps:
             logger.progress(f"  - {dep}")
 
-    if not apm_deps and not dev_apm_deps and not mcp_deps:
+    if should_install_mcp and lsp_deps:
+        logger.progress(f"LSP dependencies ({len(lsp_deps)}):")
+        for dep in lsp_deps:
+            logger.progress(f"  - {dep}")
+
+    if not apm_deps and not dev_apm_deps and not mcp_deps and not lsp_deps:
         logger.progress("No dependencies found in apm.yml")
 
     # Orphan preview: lockfile + manifest difference -- no integration

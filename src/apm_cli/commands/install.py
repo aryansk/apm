@@ -1704,6 +1704,7 @@ def _install_apm_packages(ctx, outcome):
 
     apm_deps = apm_package.get_apm_dependencies()
     dev_apm_deps = apm_package.get_dev_apm_dependencies()
+    lsp_deps = apm_package.get_lsp_dependencies()
     prod_mcp_deps = apm_package.get_mcp_dependencies()
     dev_mcp_deps = apm_package.get_dev_mcp_dependencies()
     mcp_deps = apm_package.get_all_mcp_dependencies()
@@ -1770,6 +1771,7 @@ def _install_apm_packages(ctx, outcome):
             dev_apm_deps=dev_apm_deps,
             should_install_mcp=should_install_mcp,
             update=ctx.update,
+            lsp_deps=lsp_deps,
             only_packages=ctx.only_packages,
             apm_dir=ctx.apm_dir,
         )
