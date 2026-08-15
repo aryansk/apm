@@ -429,11 +429,6 @@ def write_plugin_manifest(
     # .github/ directory pointing outside the project root).
     ensure_path_within(output_path, project_root)
 
-    if dry_run:
-        _msg = f"Would write plugin manifest to {output_path}"
-        _emit("info", _msg, logger, "info")
-        return None
-
     if output_path.exists():
         if not force:
             _skip_warn = (
@@ -447,6 +442,11 @@ def write_plugin_manifest(
             f"Overwriting {output_path} with generated manifest from apm.yml (--force)."
         )
         _emit("warning", _overwrite_warn, logger, "warning")
+
+    if dry_run:
+        _msg = f"Would write plugin manifest to {output_path}"
+        _emit("info", _msg, logger, "info")
+        return None
 
     # Generated content under .github/ is granted elevated trust by GitHub
     # Actions -- surface the write so operators with branch-protection on
