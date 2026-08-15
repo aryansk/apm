@@ -20,6 +20,7 @@ class ProspectiveInstallPlan:
     should_install_apm: bool
     should_install_mcp: bool
     only_packages: tuple[str, ...] | None
+    lsp_dependencies: tuple[Any, ...] = ()
     updated_apm_identities: frozenset[str] = frozenset()
 
     @classmethod
@@ -54,6 +55,7 @@ class ProspectiveInstallPlan:
             should_install_apm=should_install_apm,
             should_install_mcp=should_install_mcp,
             only_packages=tuple(only_packages) if only_packages is not None else None,
+            lsp_dependencies=tuple(apm_package.get_lsp_dependencies()),
             updated_apm_identities=frozenset(
                 DependencyReference.parse(package).get_identity() for package in updated_packages
             ),
@@ -78,6 +80,11 @@ class ProspectiveInstallPlan:
     def selected_mcp_dependencies(self) -> tuple[Any, ...]:
         """Return MCP dependencies only when the invocation selected MCP."""
         return self.mcp_dependencies if self.should_install_mcp else ()
+
+    @property
+    def selected_lsp_dependencies(self) -> tuple[Any, ...]:
+        """Return LSP dependencies only when the invocation selected services."""
+        return self.lsp_dependencies if self.should_install_mcp else ()
 
     @property
     def intended_dependency_keys(self) -> frozenset[str]:

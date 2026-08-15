@@ -48,7 +48,16 @@ def render_and_exit(
         for dep in plan.selected_mcp_dependencies:
             logger.progress(f"  - {dep}")
 
-    if not plan.selected_apm_dependencies and not plan.selected_mcp_dependencies:
+    if plan.selected_lsp_dependencies:
+        logger.progress(f"LSP dependencies ({len(plan.selected_lsp_dependencies)}):")
+        for dep in plan.selected_lsp_dependencies:
+            logger.progress(f"  - {dep}")
+
+    if (
+        not plan.selected_apm_dependencies
+        and not plan.selected_mcp_dependencies
+        and not plan.selected_lsp_dependencies
+    ):
         logger.progress("No dependencies found in apm.yml")
 
     # Orphan preview: lockfile + manifest difference -- no integration

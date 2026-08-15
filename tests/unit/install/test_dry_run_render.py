@@ -31,6 +31,7 @@ def render_and_exit(**kwargs) -> None:
                 if (only_packages := kwargs.pop("only_packages", None)) is not None
                 else None
             ),
+            lsp_dependencies=tuple(kwargs.pop("lsp_deps", ())),
         )
     _render_and_exit(**kwargs)
 
@@ -63,8 +64,14 @@ def _make_mcp_dep(name: str = "my-server") -> MagicMock:
     return dep
 
 
+def _make_lsp_dep(name: str = "pyright") -> MagicMock:
+    dep = MagicMock()
+    dep.__str__ = lambda self: name
+    return dep
+
+
 # ---------------------------------------------------------------------------
-# APM and MCP dependency rendering
+# APM, MCP, and LSP dependency rendering
 # ---------------------------------------------------------------------------
 
 
@@ -94,6 +101,7 @@ class TestRenderApmDeps:
         package.get_apm_dependencies.return_value = [existing, requested]
         package.get_dev_apm_dependencies.return_value = []
         package.get_all_mcp_dependencies.return_value = []
+        package.get_lsp_dependencies.return_value = []
 
         plan = ProspectiveInstallPlan.from_apm_package(
             package,
@@ -187,6 +195,31 @@ class TestRenderApmDeps:
 
         all_calls = " ".join(str(c) for c in logger.progress.call_args_list)
         assert "MCP dependencies" in all_calls
+
+    def test_lsp_only_deps_are_rendered_without_empty_message(
+        self, tmp_path: Path
+    ) -> None:
+        """LSP-only manifests render servers and do not report an empty plan."""
+        logger = _make_logger()
+        dep = _make_lsp_dep("gopls")
+
+        with patch("apm_cli.deps.lockfile.LockFile.read", side_effect=Exception):
+            render_and_exit(
+                logger=logger,
+                should_install_apm=False,
+                apm_deps=[],
+                mcp_deps=[],
+                lsp_deps=[dep],
+                dev_apm_deps=[],
+                should_install_mcp=True,
+                update=False,
+                apm_dir=tmp_path,
+            )
+
+        all_calls = " ".join(str(c) for c in logger.progress.call_args_list)
+        assert "LSP dependencies" in all_calls
+        assert "gopls" in all_calls
+        assert "No dependencies" not in all_calls
 
     def test_no_deps_shows_empty_message(self, tmp_path: Path) -> None:
         """When all dep lists are empty the 'No dependencies found' message is shown (line 53)."""

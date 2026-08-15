@@ -45,6 +45,7 @@ def check_prospective_dry_run_plan(provider: FactsProvider) -> tuple[Violation, 
         _count_re(owner, class_pattern) == 1
         and _present(owner, "def from_apm_package(")
         and _present(owner, "selected_apm_dependencies=selected_apm_dependencies")
+        and _present(owner, "lsp_dependencies=tuple(apm_package.get_lsp_dependencies())")
         and _present(command, "ProspectiveInstallPlan.from_apm_package(")
         and sum(
             "prospective_plan.selected_apm_dependencies" in line
@@ -59,6 +60,7 @@ def check_prospective_dry_run_plan(provider: FactsProvider) -> tuple[Violation, 
         and _present(renderer, "plan: ProspectiveInstallPlan")
         and _present(renderer, "for dep in plan.selected_apm_dependencies:")
         and _present(renderer, "for dep in plan.selected_mcp_dependencies:")
+        and _present(renderer, "for dep in plan.selected_lsp_dependencies:")
         and not _present(renderer, "ProspectiveInstallPlan(")
         and not duplicates
     )
