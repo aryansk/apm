@@ -270,6 +270,24 @@ class TestBuildArtifactoryArchiveUrl:
         assert any("/refs/heads/v1.0.0.zip" in u for u in urls)
         assert any("/-/archive/v1.0.0/repo-v1.0.0.zip" in u for u in urls)
 
+    def test_commit_sha_adds_generic_archive_fallback(self):
+        """Resolved commits include the immutable GitHub commit archive URL."""
+        sha = "a" * 40
+        urls = build_artifactory_archive_url(
+            "art.example.com", "artifactory/github", "owner", "repo", ref=sha
+        )
+
+        assert urls[-1].endswith(f"/owner/repo/archive/{sha}.zip")
+        assert any(f"/refs/heads/{sha}.zip" in u for u in urls)
+        assert any(f"/refs/tags/{sha}.zip" in u for u in urls)
+
+    def test_short_hex_ref_does_not_add_commit_archive_fallback(self):
+        urls = build_artifactory_archive_url(
+            "art.example.com", "artifactory/github", "owner", "repo", ref="abc123"
+        )
+
+        assert not any(u.endswith("/archive/abc123.zip") for u in urls)
+
     def test_real_artifactory_host(self):
         """Build URLs matching real Artifactory pattern."""
         urls = build_artifactory_archive_url(
