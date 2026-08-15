@@ -97,6 +97,8 @@ _SEGMENT_PAT = r"[A-Za-z0-9._-]+"
 _OWNER_REPO_PAT = rf"{_SEGMENT_PAT}/{_SEGMENT_PAT}"
 _HTTPS_REPOSITORY_PAT = rf"{_SEGMENT_PAT}(?:/{_SEGMENT_PAT})+"
 _RELATIVE_SOURCE_PAT = rf"{_SEGMENT_PAT}(?:/{_SEGMENT_PAT})*"
+_SOURCE_BASE_SEGMENT_PAT = r"(?:[A-Za-z0-9._-]|%[0-9A-Fa-f]{2})+"
+_SOURCE_BASE_PATH_PAT = rf"{_SOURCE_BASE_SEGMENT_PAT}(?:/{_SOURCE_BASE_SEGMENT_PAT})*"
 
 SOURCE_RE = re.compile(
     r"^(?:"
@@ -107,7 +109,7 @@ SOURCE_RE = re.compile(
     r")$"
 )
 LOCAL_SOURCE_RE = re.compile(r"^\./")
-SOURCE_BASE_RE = re.compile(rf"^https://{_HOST_PAT}/{_RELATIVE_SOURCE_PAT}$")
+SOURCE_BASE_RE = re.compile(rf"^https://{_HOST_PAT}/{_SOURCE_BASE_PATH_PAT}$")
 _RELATIVE_SOURCE_RE = re.compile(rf"^{_RELATIVE_SOURCE_PAT}$")
 # Matches ``host.tld/owner/repo`` (3 segments, first is FQDN-ish).
 _HOST_PREFIXED_SOURCE_RE = re.compile(rf"^({_HOST_PAT})/({_OWNER_REPO_PAT})$")
@@ -549,8 +551,31 @@ def parse_source_base(raw: Any) -> str | None:
         raise MarketplaceYmlError(str(exc)) from exc
     if not SOURCE_BASE_RE.match(source_base):
         raise MarketplaceYmlError(
-            "'sourceBase' path segments may only contain letters, digits, dot, underscore, or hyphen"
+            "'sourceBase' path segments may only contain letters, digits, dot, underscore, hyphen, "
+            "or percent-encoded bytes"
         )
+
+    decoded_segments: list[str] = []
+    for segment in path.split("/"):
+        try:
+            decoded = _urlparse.unquote_to_bytes(segment).decode("utf-8")
+        except UnicodeDecodeError as exc:
+            raise MarketplaceYmlError(
+                "'sourceBase' contains invalid UTF-8 percent-encoding"
+            ) from exc
+        if "/" in decoded or "\\" in decoded:
+            raise MarketplaceYmlError(
+                "'sourceBase' percent-encoding must not decode to a path separator"
+            )
+        decoded_segments.append(decoded)
+    try:
+        validate_path_segments(
+            "/".join(decoded_segments),
+            context="sourceBase",
+            reject_empty=True,
+        )
+    except PathTraversalError as exc:
+        raise MarketplaceYmlError(str(exc)) from exc
     return source_base
 
 

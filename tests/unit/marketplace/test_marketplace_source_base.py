@@ -97,6 +97,20 @@ class TestSourceBaseSchema:
         assert config.packages[1].source == "team/tools/nested-tool"
         assert config.packages[1].host is None
 
+    def test_accepts_percent_encoded_space_in_ado_source_base(self, tmp_path: Path) -> None:
+        config = _load_config(
+            tmp_path,
+            "https://dev.azure.com/contoso/My%20Projects/_git",
+            f"""
+            - name: ado-tool
+              source: agent-skills
+              ref: {_SHA}
+            """,
+        )
+
+        assert config.source_base == "https://dev.azure.com/contoso/My%20Projects/_git"
+        assert config.packages[0].source == "agent-skills"
+
     def test_absent_source_base_keeps_owner_repo_source_unchanged(self, tmp_path: Path) -> None:
         config = _load_config(
             tmp_path,
@@ -125,6 +139,8 @@ class TestSourceBaseSchema:
             ("https://gitlab.example.com/group//repo", "empty"),
             ("https://gitlab.example.com/group//", "empty"),
             ("https://gitlab.example.com/group/../repo", "traversal"),
+            ("https://dev.azure.com/contoso/%2e%2e/_git", "traversal"),
+            ("https://dev.azure.com/contoso/My%2FProjects/_git", "path separator"),
         ],
     )
     def test_rejects_source_base_security_guard_violations(
