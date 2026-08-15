@@ -731,6 +731,17 @@ class AgentsCompiler:
 
         pending_outputs: dict[Path, str] = {}
         for agents_path, content in distributed_result.content_map.items():
+            # Issue #2560 case B: never write into a nested independent Git
+            # repository. A sub-directory that is the root of its own worktree
+            # (.git file, not directory) belongs to another repo; mirror the
+            # boundary check the orphan sweep uses and skip it with a warning.
+            if self._is_nested_git_worktree(agents_path.parent):
+                rel = portable_relpath(agents_path.parent, self.base_dir)
+                self.warnings.append(
+                    f"Skipping AGENTS.md at {agents_path.name} in nested Git worktree "
+                    f"{rel}: it belongs to a separate repository"
+                )
+                continue
             try:
                 pending_outputs[agents_path] = self._prepare_distributed_file(
                     agents_path, content, config
@@ -1690,10 +1701,13 @@ class AgentsCompiler:
                 except Exception as exc:
                     _logger.debug("Constitution injection failed for %s: %s", agents_path, exc)
 
-            # Honour managed_section mode for the root AGENTS.md (issue #1764).
-            # Sub-directory files are fully APM-generated and always overwritten.
-            is_root = agents_path.parent.resolve() == self.base_dir.resolve()
-            if is_root and config.agents_md_mode == "managed_section":
+            # Honour managed_section mode for every AGENTS.md, not just the
+            # root one (issue #2560): a sub-directory file that carries the
+            # markers must be reconciled between them, preserving surrounding
+            # hand-authored content. Marker presence is checked by
+            # `_prepare_output_content_with_config` (missing markers raise
+            # instead of silently overwriting the file).
+            if config.agents_md_mode == "managed_section":
                 return self._prepare_output_content_with_config(
                     str(agents_path), final_content, config
                 )
@@ -1708,8 +1722,31 @@ class AgentsCompiler:
         """Write one distributed file through the canonical writer."""
         from .output_writer import CompiledOutputWriter
 
+        # Issue #2560 case B: never write into a nested independent Git
+        # repository. A sub-directory that is the root of its own worktree
+        # (.git file, not directory) belongs to another repo; mirror the
+        # boundary check the orphan sweep uses and skip it with a warning.
+        if self._is_nested_git_worktree(agents_path.parent):
+            rel = portable_relpath(agents_path.parent, self.base_dir)
+            self.warnings.append(
+                f"Skipping AGENTS.md at {agents_path.name} in nested Git worktree "
+                f"{rel}: it belongs to a separate repository"
+            )
+            _logger.debug("Skipped AGENTS.md write inside nested Git worktree: %s", agents_path)
+            return
+
         final_content = self._prepare_distributed_file(agents_path, content, config)
         CompiledOutputWriter().write(agents_path, final_content)
+
+    @staticmethod
+    def _is_nested_git_worktree(directory: Path) -> bool:
+        """Return True if *directory* is the root of an independent Git worktree.
+
+        Matches the orphan-sweep boundary rule (distributed_compiler.py): a
+        nested repo root carries a ``.git`` *file* (a gitfile pointing at the
+        real metadata store), not a ``.git`` directory.
+        """
+        return bool((directory / ".git").is_file())
 
     def _display_placement_preview(self, distributed_result) -> None:
         """Display placement preview for --show-placement mode.

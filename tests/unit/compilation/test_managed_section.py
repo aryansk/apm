@@ -387,8 +387,8 @@ class TestManagedSectionDistributed:
         assert "New APM block." in written
         assert "Old APM block." not in written
 
-    def test_distributed_subdir_agents_md_ignores_managed_section(self, tmp_path):
-        """Sub-directory AGENTS.md is fully overwritten even with managed_section."""
+    def test_distributed_subdir_agents_md_reconciles_managed_section(self, tmp_path):
+        """Sub-directory AGENTS.md markers are reconciled, preserving hand content (#2560)."""
         from apm_cli.compilation.agents_compiler import AgentsCompiler, CompilationConfig
 
         start = "<!-- apm:start -->"
@@ -397,11 +397,7 @@ class TestManagedSectionDistributed:
         subdir.mkdir()
         subdir_agents = subdir / "AGENTS.md"
         subdir_agents.write_text(
-            "# Old content\n\n"
-            f"{start}\n"
-            "Old APM block.\n"
-            f"{end}\n\n"
-            "Human content that will be overwritten.\n"
+            f"# Old content\n\n{start}\nOld APM block.\n{end}\n\nHuman content that must survive.\n"
         )
 
         config = CompilationConfig(
@@ -412,11 +408,29 @@ class TestManagedSectionDistributed:
         )
 
         compiler = AgentsCompiler(str(tmp_path))
-        compiler._write_distributed_file(subdir_agents, "Fully new content.", config)
+        compiler._write_distributed_file(subdir_agents, "New APM block.", config)
 
         written = subdir_agents.read_text()
-        assert written == "Fully new content."
-        assert "Human content that will be overwritten." not in written
+        assert "Human content that must survive." in written
+        assert "New APM block." in written
+        assert "Old APM block." not in written
+
+    def test_distributed_subdir_agents_md_skips_nested_git_worktree(self, tmp_path):
+        """A nested independent Git repo root is never written to (#2560 case B)."""
+        from apm_cli.compilation.agents_compiler import AgentsCompiler, CompilationConfig
+
+        nested = tmp_path / "nested"
+        nested.mkdir()
+        # A gitfile (not a directory) marks an independent worktree root.
+        (nested / ".git").write_text("gitdir: /elsewhere/.git\n", encoding="utf-8")
+        subdir_agents = nested / "AGENTS.md"
+
+        config = CompilationConfig(agents_md_mode="full", dry_run=False)
+        compiler = AgentsCompiler(str(tmp_path))
+        compiler._write_distributed_file(subdir_agents, "Should not be written.", config)
+
+        assert not subdir_agents.exists()
+        assert any("nested Git worktree" in w for w in compiler.warnings)
 
     def test_distributed_root_agents_md_full_mode_overwrites(self, tmp_path):
         """Root AGENTS.md is fully overwritten when mode is 'full' (default)."""
