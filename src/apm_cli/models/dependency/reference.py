@@ -661,10 +661,11 @@ class DependencyReference(ProviderCoordinateMixin):
         else:
             return  # bare shorthand or other form -- not in scope
 
-        # Strip fragment and query string, then remove trailing .git suffix
+        # Strip fragment and query string. A trailing .git is an explicit
+        # repository terminator, so there cannot be an embedded package subpath.
         path_part = path_part.split("#")[0].split("?")[0]
         if path_part.endswith(".git"):
-            path_part = path_part[:-4]
+            return
 
         segments = [s for s in path_part.replace("\\", "/").split("/") if s]
         if len(segments) < 3:

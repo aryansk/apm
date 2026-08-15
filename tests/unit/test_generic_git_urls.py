@@ -59,6 +59,11 @@ class TestGitLabHTTPS:
         assert dep.host == "gitlab.com"
         assert dep.repo_url == "acme/coding-standards"
 
+    def test_gitlab_deep_subgroup_named_primitive_with_git_suffix(self):
+        dep = DependencyReference.parse("https://gitlab.com/ai/collections/core.git")
+        assert dep.host == "gitlab.com"
+        assert dep.repo_url == "ai/collections/core"
+
     def test_gitlab_https_url_with_ref(self):
         dep = DependencyReference.parse("https://gitlab.com/acme/coding-standards.git#v2.0")
         assert dep.host == "gitlab.com"
