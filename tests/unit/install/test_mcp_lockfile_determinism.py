@@ -135,10 +135,7 @@ def _run_lockfile_phase_and_mcp_persist(
     ctx.package_types = {dep_key: package_type}
 
     _FixedDatetime.instant = instant
-    with (
-        patch("apm_cli.deps.lockfile.datetime", _FixedDatetime),
-        patch("apm_cli.integration.mcp_integrator.datetime", _FixedDatetime),
-    ):
+    with patch("apm_cli.deps.lockfile.datetime", _FixedDatetime):
         LockfileBuilder(ctx).build_and_save()
         mcp_deps = package.get_mcp_dependencies()
         MCPIntegrator.update_lockfile(
@@ -239,7 +236,9 @@ def test_unchanged_local_instructions_do_not_rewrite_lockfile(tmp_path: Path) ->
     first_bytes = lock_path.read_bytes()
     first_lock = LockFile.read(lock_path)
     assert first_lock is not None
-    assert first_lock.generated_at == first_instant.isoformat()
+    # ``generated_at`` must not be written anymore (#2572): a per-run timestamp
+    # in the lockfile is a constant source of merge conflicts.
+    assert "generated_at" not in lock_path.read_text()
     assert first_lock.local_deployed_files == [".github/instructions/local.instructions.md"]
 
     _run_lockfile_phase_and_local_persist(tmp_path, second_instant)
@@ -247,7 +246,6 @@ def test_unchanged_local_instructions_do_not_rewrite_lockfile(tmp_path: Path) ->
     second_lock = LockFile.read(lock_path)
     assert second_lock is not None
 
-    assert second_lock.generated_at == first_lock.generated_at
     assert second_lock.local_deployed_file_hashes == first_lock.local_deployed_file_hashes
     assert second_bytes == first_bytes
 
@@ -263,14 +261,13 @@ def test_unchanged_mcp_dependencies_do_not_rewrite_lockfile(tmp_path: Path) -> N
     first_bytes = lock_path.read_bytes()
     first_lock = LockFile.read(lock_path)
     assert first_lock is not None
-    assert first_lock.generated_at == first_instant.isoformat()
+    assert "generated_at" not in lock_path.read_text()
 
     _run_lockfile_phase_and_mcp_persist(tmp_path, package, second_instant)
     second_bytes = lock_path.read_bytes()
     second_lock = LockFile.read(lock_path)
     assert second_lock is not None
 
-    assert second_lock.generated_at == first_lock.generated_at
     assert second_bytes == first_bytes
 
 
@@ -288,7 +285,7 @@ def test_unchanged_mcp_target_servers_do_not_rewrite_lockfile(tmp_path: Path) ->
     first_bytes = lock_path.read_bytes()
     first_lock = LockFile.read(lock_path)
     assert first_lock is not None
-    assert first_lock.generated_at == first_instant.isoformat()
+    assert "generated_at" not in lock_path.read_text()
     assert first_lock.mcp_target_servers == target_servers
 
     second_context = _run_lockfile_phase_and_mcp_persist(
@@ -298,7 +295,6 @@ def test_unchanged_mcp_target_servers_do_not_rewrite_lockfile(tmp_path: Path) ->
     second_lock = LockFile.read(lock_path)
     assert second_lock is not None
 
-    assert second_lock.generated_at == first_lock.generated_at
     assert second_lock.mcp_target_servers == target_servers
     assert second_bytes == first_bytes
     deployment_rows = {
@@ -350,7 +346,7 @@ def test_real_mcp_target_change_writes_once_then_converges(tmp_path: Path) -> No
     changed_lock = LockFile.read(lock_path)
     assert changed_lock is not None
     assert changed_writes == [lock_path]
-    assert changed_lock.generated_at == second_instant.isoformat()
+    assert "generated_at" not in lock_path.read_text()
     assert changed_lock.mcp_target_servers == changed_targets
 
     converged_writes: list[Path] = []
@@ -454,7 +450,7 @@ def test_stale_partial_provenance_repairs_once_then_converges(tmp_path: Path) ->
     repaired = LockFile.read(lock_path)
     assert repaired is not None
     assert repair_writes == [lock_path]
-    assert repaired.generated_at == second_instant.isoformat()
+    assert "generated_at" not in lock_path.read_text()
     assert repaired.mcp_config_provenance == {}
     repaired_bytes = lock_path.read_bytes()
 
@@ -640,7 +636,7 @@ def test_changed_mcp_dependencies_update_lockfile(tmp_path: Path) -> None:
     second_lock = LockFile.read(lock_path)
     assert second_lock is not None
 
-    assert second_lock.generated_at == second_instant.isoformat()
+    assert "generated_at" not in lock_path.read_text()
     assert second_lock.mcp_servers == ["github"]
     assert second_lock.mcp_configs == {
         "github": {
@@ -664,14 +660,13 @@ def test_unchanged_lsp_dependencies_do_not_rewrite_lockfile(tmp_path: Path) -> N
     first_bytes = lock_path.read_bytes()
     first_lock = LockFile.read(lock_path)
     assert first_lock is not None
-    assert first_lock.generated_at == first_instant.isoformat()
+    assert "generated_at" not in lock_path.read_text()
 
     _run_lockfile_phase_and_lsp_persist(tmp_path, package, second_instant)
     second_bytes = lock_path.read_bytes()
     second_lock = LockFile.read(lock_path)
     assert second_lock is not None
 
-    assert second_lock.generated_at == first_lock.generated_at
     assert second_lock.lsp_servers == first_lock.lsp_servers
     assert second_lock.lsp_configs == first_lock.lsp_configs
     assert second_bytes == first_bytes

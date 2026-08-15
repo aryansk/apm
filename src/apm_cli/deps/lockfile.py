@@ -799,9 +799,13 @@ class LockFile:
         # since the flat fields remain the source of truth in YAML.
         _self_dep = self.dependencies.pop(_SELF_KEY, None)
         try:
+            # ``generated_at`` is deliberately NOT written (issue #2572): a
+            # per-run timestamp in the lockfile is a constant source of merge
+            # conflicts across unrelated branches. The field is still parsed
+            # from legacy lockfiles so ``apm lock export`` keeps its timestamp
+            # fallback for existing projects.
             data: dict[str, Any] = {
                 "lockfile_version": emit_version,
-                "generated_at": self.generated_at,
             }
             if self.apm_version:
                 data["apm_version"] = self.apm_version
@@ -1012,8 +1016,8 @@ class LockFile:
     def is_semantically_equivalent(self, other: LockFile) -> bool:
         """Return True if *other* has the same deps, MCP/LSP servers, and configs.
 
-        Ignores ``generated_at`` and ``apm_version`` so that a no-change
-        install does not dirty the lockfile.
+        Ignores ``apm_version`` so that a no-change install does not dirty
+        the lockfile.
         """
         if self.lockfile_version != other.lockfile_version:
             return False
