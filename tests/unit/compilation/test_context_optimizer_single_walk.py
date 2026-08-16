@@ -110,6 +110,19 @@ class TestSingleWalkPopulatesBothCaches:
         assert "utils.py" in file_names
         assert "test_main.py" in file_names
 
+    def test_literal_apply_to_prefix_prunes_unrelated_top_level_subtrees(
+        self, tmp_path: Path
+    ) -> None:
+        _touch(tmp_path, "src/main.py")
+        _touch(tmp_path, "vendor/huge.txt")
+
+        optimizer = ContextOptimizer(base_dir=str(tmp_path))
+        optimizer.optimize_instruction_placement([_make_instruction(apply_to="src/**/*.py")])
+
+        assert tmp_path / "src/main.py" in optimizer._file_list_cache
+        assert tmp_path / "vendor/huge.txt" not in optimizer._file_list_cache
+        assert tmp_path / "vendor" not in optimizer._directory_cache
+
 
 class TestGetAllFilesRoutesThroughAnalyze:
     """_get_all_files must route through _analyze_project_structure when cache is None."""

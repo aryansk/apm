@@ -153,6 +153,7 @@ class ContextOptimizer:
         self._glob_set_cache: builtins.dict[str, builtins.set[Path]] = {}
         self._file_list_cache: builtins.list[Path] | None = None
         self._placement_hidden_tool_trees: frozenset[str] = frozenset()
+        self._scan_top_level_roots: frozenset[str] | None = None
         self._inheritance_cache: builtins.dict[Path, builtins.list[Path]] = {}  # (#171)
         self._timing_enabled = False
         self._phase_timings: builtins.dict[str, float] = {}
@@ -270,6 +271,7 @@ class ContextOptimizer:
         # Shared file discovery runs once per compile batch, so traverse the
         # union of roots explicitly targeted by its instructions.
         self._placement_hidden_tool_trees = self._targeted_hidden_tool_roots(instructions)
+        self._scan_top_level_roots = self._targeted_top_level_roots(instructions)
         self._file_list_cache = None
         self._glob_cache.clear()
         self._glob_set_cache.clear()
@@ -533,6 +535,11 @@ class ContextOptimizer:
                 dirs[:] = []
                 continue
 
+            # When every applyTo pattern starts with a literal top-level
+            # directory, avoid descending unrelated monorepo subtrees.
+            if current_path == self.base_dir and self._scan_top_level_roots is not None:
+                dirs[:] = [d for d in dirs if d in self._scan_top_level_roots]
+
             # Prune and sort subdirectories.  Sorting ensures that
             # ``_file_list_cache`` has a stable, deterministic order across
             # platforms (the OS-level readdir order is not guaranteed).
@@ -636,6 +643,35 @@ class ContextOptimizer:
                     PLACEMENT_HIDDEN_TOOL_TREES.intersection(pattern.replace("\\", "/").split("/"))
                 )
         return frozenset(targeted_roots)
+
+    def _targeted_top_level_roots(
+        self, instructions: builtins.list[Instruction]
+    ) -> frozenset[str] | None:
+        """Return literal top-level roots shared by all scoped applyTo patterns.
+
+        A wildcard or root-wide pattern requires the full project walk, so this
+        returns ``None`` in that case. Global-only instruction sets also keep
+        the existing full-walk behavior.
+        """
+        roots: builtins.set[str] = set()
+        saw_scoped_pattern = False
+        for instruction in instructions:
+            if not instruction.apply_to:
+                continue
+            for pattern in parse_apply_to(instruction.apply_to):
+                normalized = pattern.replace("\\", "/")
+                while normalized.startswith("./"):
+                    normalized = normalized[2:]
+                first, separator, _rest = normalized.partition("/")
+                if (
+                    not separator
+                    or first == "**"
+                    or any(token in first for token in ("*", "?", "[", "{"))
+                ):
+                    return None
+                saw_scoped_pattern = True
+                roots.add(first)
+        return frozenset(roots) if saw_scoped_pattern else None
 
     def _relative_path(self, path: Path) -> Path | None:
         """Return a lexical path for a directory discovered under ``base_dir``."""
