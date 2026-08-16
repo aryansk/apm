@@ -37,7 +37,7 @@ def _git_source(url: str, name: str = "acme", ref: str = "main") -> MarketplaceS
 
 @pytest.fixture
 def fake_host_info():
-    return SimpleNamespace(host="gitea.example.com")
+    return SimpleNamespace(host="gitea.example.com", kind="generic")
 
 
 @pytest.fixture
@@ -72,6 +72,7 @@ def test_fetch_git_calls_gitcache_with_sparse_path(
     fake_auth_resolver.resolve.assert_called_once()
     call_kwargs = gitcache_mock.get_checkout.call_args.kwargs
     assert call_kwargs["env"] == {"GIT_TERMINAL_PROMPT": "0"}
+    fake_auth_resolver.hardened_git_env_for_context.assert_not_called()
 
 
 def test_fetch_git_ado_url_routes_via_subprocess(
@@ -103,7 +104,7 @@ def test_fetch_git_ado_url_routes_via_subprocess(
         result = _fetch_git(
             _git_source("https://dev.azure.com/org/project/_git/repo"),
             "marketplace.json",
-            host_info=SimpleNamespace(host="dev.azure.com"),
+            host_info=SimpleNamespace(host="dev.azure.com", kind="ado"),
             auth_resolver=fake_auth_resolver,
         )
 

@@ -581,7 +581,11 @@ def _fetch_git(
         if source.port is not None
         else auth_resolver.resolve(host_info.host, org)
     )
-    git_env = auth_resolver.hardened_git_env_for_context(auth_ctx)
+    git_env = (
+        auth_ctx.git_env
+        if host_info.kind == "generic"
+        else auth_resolver.hardened_git_env_for_context(auth_ctx)
+    )
 
     cache = GitCache(get_cache_root(), refresh=False)
     try:
