@@ -115,6 +115,7 @@ def discover_global_instructions(
     source_root: Path,
     *,
     logger: _logging_module.Logger | None = None,
+    include_scoped: bool = False,
 ) -> list[Instruction]:
     """Return global (apply_to-less) instructions under ``source_root/apm_modules``.
 
@@ -136,7 +137,11 @@ def discover_global_instructions(
 
     primitives = discover_primitives(str(apm_modules))
     return sorted(
-        [instr for instr in primitives.instructions if not instr.apply_to],
+        [
+            instr
+            for instr in primitives.instructions
+            if include_scoped or not instr.apply_to
+        ],
         key=lambda instr: str(instr.file_path),
     )
 
@@ -194,7 +199,10 @@ def compile_user_root_contexts(
         )
         return results
 
-    global_instructions = discover_global_instructions(source_root, logger=log)
+    all_instructions = discover_global_instructions(
+        source_root, logger=log, include_scoped=True
+    )
+    global_instructions = [instr for instr in all_instructions if not instr.apply_to]
 
     for target in targets:
         # Resolve to user scope; None == target does not support user scope
@@ -212,9 +220,12 @@ def compile_user_root_contexts(
             )
             continue
 
-        if not global_instructions:
+        target_instructions = (
+            all_instructions if scoped.name == "opencode" else global_instructions
+        )
+        if not target_instructions:
             log.debug(
-                "user_root_context: no global instructions found in %s -- skipping %s",
+                "user_root_context: no applicable instructions found in %s -- skipping %s",
                 apm_modules,
                 scoped.name,
             )
@@ -232,7 +243,7 @@ def compile_user_root_contexts(
             )
             continue
 
-        content = _generate_content(global_instructions)
+        content = _generate_content(target_instructions)
 
         # -- overwrite protection --
         if output_path.exists():

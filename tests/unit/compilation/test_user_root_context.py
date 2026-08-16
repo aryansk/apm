@@ -206,6 +206,26 @@ class TestSkippedNoInstructions:
         assert len(result) == 1
         assert result[0].status == "skipped-no-instructions"
 
+    def test_opencode_includes_scoped_instructions_in_user_agents_md(self, tmp_path):
+        from apm_cli.compilation.user_root_context import compile_user_root_contexts
+
+        source_root = tmp_path / "source"
+        (source_root / "apm_modules").mkdir(parents=True)
+        deploy_root = tmp_path / ".config" / "opencode"
+        target = _make_target("opencode", "agents", deploy_root=deploy_root)
+        instr = _make_instruction("python", apply_to="**/*.py", content="Use hints")
+        primitives = MagicMock()
+        primitives.instructions = [instr]
+
+        with patch(
+            "apm_cli.primitives.discovery.discover_primitives",
+            return_value=primitives,
+        ):
+            result = compile_user_root_contexts([target], source_root)
+
+        assert result[0].status == "written"
+        assert "Use hints" in (deploy_root / "AGENTS.md").read_text()
+
 
 # ---------------------------------------------------------------------------
 # test_skipped_hand_authored

@@ -179,6 +179,26 @@ class TestOpenCodeScopeResolution:
         assert expected.exists()
         assert not (self.project_root / ".opencode" / "agents").exists()
 
+    def test_user_scope_skills_deploy_to_native_opencode_skills(self):
+        opencode = KNOWN_TARGETS["opencode"]
+        resolved = opencode.for_scope(user_scope=True)
+        (self.project_root / ".config" / "opencode").mkdir(parents=True)
+
+        pkg = self.project_root / "apm_modules" / "test-pkg"
+        skill_dir = pkg / ".apm" / "skills" / "reviewer"
+        skill_dir.mkdir(parents=True)
+        (skill_dir / "SKILL.md").write_text("# Reviewer skill")
+        pkg_info = _make_package_info(pkg)
+
+        result = SkillIntegrator().integrate_skills_for_target(
+            resolved, pkg_info, self.project_root
+        )
+
+        assert result.files_integrated == 1
+        expected = self.project_root / ".config" / "opencode" / "skills" / "reviewer" / "SKILL.md"
+        assert expected.exists()
+        assert not (self.project_root / ".agents" / "skills" / "reviewer" / "SKILL.md").exists()
+
     def test_project_scope_agents_deploy_to_opencode(self):
         opencode = KNOWN_TARGETS["opencode"]
         resolved = opencode.for_scope(user_scope=False)
