@@ -91,6 +91,47 @@ def _legacy_intellij_config_dir() -> Path | None:
     return root.joinpath(*_CONFIG_SUFFIX)
 
 
+def _strip_jsonc_comments(raw: str) -> str:
+    """Strip JSONC comments while preserving string contents and line layout."""
+    chars = list(raw)
+    in_string = False
+    escaped = False
+    i = 0
+    while i < len(chars):
+        ch = chars[i]
+        if in_string:
+            if escaped:
+                escaped = False
+            elif ch == "\\":
+                escaped = True
+            elif ch == '"':
+                in_string = False
+            i += 1
+            continue
+        if ch == '"':
+            in_string = True
+            i += 1
+            continue
+        if ch == "/" and i + 1 < len(chars) and chars[i + 1] == "/":
+            j = i
+            while j < len(chars) and chars[j] not in "\r\n":
+                chars[j] = " "
+                j += 1
+            i = j
+            continue
+        if ch == "/" and i + 1 < len(chars) and chars[i + 1] == "*":
+            end = raw.find("*/", i + 2)
+            if end == -1:
+                return raw
+            for j in range(i, end + 2):
+                if chars[j] not in "\r\n":
+                    chars[j] = " "
+            i = end + 2
+            continue
+        i += 1
+    return "".join(chars)
+
+
 def _config_without_servers(
     config: dict,
     names: set[str],
@@ -153,7 +194,7 @@ class IntelliJClientAdapter(CopilotClientAdapter):
                 "Check its permissions and UTF-8 encoding, then rerun apm install."
             ) from exc
         try:
-            config = json.loads(raw)
+            config = json.loads(_strip_jsonc_comments(raw))
         except json.JSONDecodeError as exc:
             raise IntelliJConfigError(
                 f"JetBrains Copilot MCP config at '{path}' is malformed JSON ({exc}). "

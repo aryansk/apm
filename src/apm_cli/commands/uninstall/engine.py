@@ -1331,6 +1331,48 @@ def _sync_integrations_after_uninstall(
     return counts, package_deployed_files
 
 
+def _remove_stale_mcp_from_recorded_targets(
+    stale_servers,
+    lockfile,
+    *,
+    project_root,
+    user_scope,
+    scope,
+):
+    """Clean only runtimes recorded in the deployment ledger, without fail-fast."""
+    target_servers = dict(getattr(lockfile, "mcp_target_servers", {}) or {})
+    if not target_servers:
+        MCPIntegrator.remove_stale(
+            stale_servers,
+            project_root=project_root,
+            user_scope=user_scope,
+            scope=scope,
+            fail_on_write_error=True,
+        )
+        return
+
+    failures = []
+    for runtime, managed_servers in sorted(target_servers.items()):
+        scoped_stale = builtins.set(stale_servers).intersection(managed_servers)
+        if not scoped_stale:
+            continue
+        try:
+            MCPIntegrator.remove_stale(
+                scoped_stale,
+                runtime=runtime,
+                project_root=project_root,
+                user_scope=user_scope,
+                scope=scope,
+                fail_on_write_error=True,
+            )
+        except Exception as exc:
+            failures.append((runtime, exc))
+
+    if failures:
+        runtimes = ", ".join(runtime for runtime, _exc in failures)
+        raise RuntimeError(f"MCP cleanup failed for target(s): {runtimes}") from failures[0][1]
+
+
 def _cleanup_stale_mcp(
     apm_package,
     lockfile,
@@ -1357,8 +1399,9 @@ def _cleanup_stale_mcp(
     new_mcp_servers = MCPIntegrator.get_server_names(view.dependencies)
     stale_servers = old_mcp_servers - new_mcp_servers
     if stale_servers:
-        MCPIntegrator.remove_stale(
+        _remove_stale_mcp_from_recorded_targets(
             stale_servers,
+            lockfile,
             project_root=project_root,
             user_scope=user_scope,
             scope=scope,
