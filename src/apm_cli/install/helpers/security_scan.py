@@ -11,6 +11,44 @@ from pathlib import Path
 from apm_cli.utils.diagnostics import DiagnosticCollector
 
 
+_DEPLOYABLE_DIRS = frozenset(
+    {
+        ".apm",
+        ".github",
+        ".claude-plugin",
+        "agents",
+        "commands",
+        "context",
+        "contexts",
+        "hooks",
+        "instructions",
+        "memory",
+        "prompts",
+        "skills",
+    }
+)
+_DEPLOYABLE_NAMES = frozenset(
+    {"SKILL.md", "plugin.json", "hooks.json", ".mcp.json", "lsp.json"}
+)
+_DEPLOYABLE_SUFFIXES = (
+    ".agent.md",
+    ".instructions.md",
+    ".context.md",
+    ".memory.md",
+    ".prompt.md",
+)
+
+
+def _is_deployable_source_path(relative_path: str) -> bool:
+    """Return whether a fetched source file belongs to deployable package content."""
+    parts = tuple(part for part in relative_path.replace("\\", "/").split("/") if part)
+    if not parts:
+        return False
+    if parts[-1] in _DEPLOYABLE_NAMES or parts[-1].endswith(_DEPLOYABLE_SUFFIXES):
+        return True
+    return any(part in _DEPLOYABLE_DIRS for part in parts[:-1])
+
+
 def _pre_deploy_security_scan(
     install_path: Path,
     diagnostics: DiagnosticCollector,
@@ -29,7 +67,12 @@ def _pre_deploy_security_scan(
     """
     from apm_cli.security.gate import BLOCK_POLICY, SecurityGate
 
-    verdict = SecurityGate.scan_files(install_path, policy=BLOCK_POLICY, force=force)
+    verdict = SecurityGate.scan_files(
+        install_path,
+        policy=BLOCK_POLICY,
+        force=force,
+        path_filter=_is_deployable_source_path,
+    )
     if not verdict.has_findings:
         return True
 
@@ -41,7 +84,10 @@ def _pre_deploy_security_scan(
             logger.error(
                 f"  Blocked: {package_name or 'package'} contains critical hidden character(s)"
             )
-            logger.tree_item(f"  |-- Inspect source: {install_path}")
+            logger.tree_item(f"  |-- Source checkout: {install_path}")
+            logger.tree_item(
+                "  |-- Note: a failed install may remove this checkout during transaction cleanup"
+            )
             logger.tree_item("  |-- Use --force to deploy anyway")
         return False
 

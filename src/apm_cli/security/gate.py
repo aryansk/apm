@@ -81,6 +81,7 @@ class SecurityGate:
         *,
         policy: ScanPolicy = BLOCK_POLICY,
         force: bool = False,
+        path_filter=None,
     ) -> ScanVerdict:
         """Walk *root*, scan every regular file, return a verdict.
 
@@ -96,6 +97,8 @@ class SecurityGate:
                 if fpath.is_symlink():
                     continue
                 rel = portable_relpath(fpath, root)
+                if path_filter is not None and not path_filter(rel):
+                    continue
                 scanned_files.add(rel)
                 try:
                     file_findings = ContentScanner.scan_file(fpath)
