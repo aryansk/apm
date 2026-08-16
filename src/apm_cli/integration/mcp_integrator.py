@@ -1103,6 +1103,20 @@ class MCPIntegrator:
         )
         from apm_cli.integration.targets import RUNTIME_TO_CANONICAL_TARGET
 
+        # ``copilot`` is a user-facing target shared historically with the
+        # ``vscode`` alias.  For an explicit project-scoped Copilot target,
+        # route the legacy VS Code runtime slot to the Copilot CLI adapter so
+        # MCP configuration lands in the CLI-supported project .mcp.json.
+        explicit_tokens = (
+            [explicit_target]
+            if isinstance(explicit_target, str)
+            else list(explicit_target or [])
+        )
+        if not user_scope and explicit_tokens == ["copilot"]:
+            target_runtimes = list(dict.fromkeys(
+                "copilot" if runtime == "vscode" else runtime for runtime in target_runtimes
+            ))
+
         if target_decision is not None and target_decision.canonical_targets is not None:
             active = set(target_decision.canonical_targets)
             out = [

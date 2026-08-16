@@ -106,8 +106,10 @@ class CopilotClientAdapter(MCPClientAdapter):
         """Get the path to the Copilot CLI MCP configuration file.
 
         Returns:
-            str: Path to ~/.copilot/mcp-config.json
+            str: Project .mcp.json or the user-scope ~/.copilot/mcp-config.json.
         """
+        if not self.user_scope:
+            return str(self.project_root / ".mcp.json")
         copilot_dir = Path.home() / ".copilot"
         return str(copilot_dir / "mcp-config.json")
 
