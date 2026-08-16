@@ -153,4 +153,19 @@ class OpenCodeClientAdapter(CopilotClientAdapter):
         if env:
             entry["environment"] = dict(env)
 
+        translated_keys = {
+            "type",
+            "tools",
+            "id",
+            "command",
+            "args",
+            "env",
+            "url",
+            "headers",
+            "enabled",
+        }
+        for key, value in copilot_entry.items():
+            if key not in translated_keys and key not in entry:
+                entry[key] = value
+
         return entry
