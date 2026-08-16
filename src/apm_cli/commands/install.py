@@ -744,6 +744,23 @@ def _validate_and_add_packages_to_apm_yml(
     return validated_packages, outcome
 
 
+def _prepare_dry_run_manifest_path(
+    manifest_path: Path,
+    *,
+    dry_run: bool,
+    user_scope: bool,
+    has_packages: bool,
+):
+    """Redirect an absent user manifest to temporary storage during previews."""
+    if not (dry_run and user_scope and has_packages and not manifest_path.exists()):
+        return manifest_path, None
+
+    import tempfile
+
+    temp_dir = tempfile.TemporaryDirectory(prefix="apm-dry-run-")
+    return Path(temp_dir.name) / manifest_path.name, temp_dir
+
+
 # ---------------------------------------------------------------------------
 # MCP CLI helpers (W3 --mcp flag)
 # ---------------------------------------------------------------------------
@@ -1224,6 +1241,7 @@ def install(  # noqa: PLR0913
     logger = None
     command_result: InstallResult | None = None
     transaction: InstallTransaction | None = None
+    dry_run_manifest_tmp = None
     from ..install.service import InstallService
 
     try:
@@ -1456,7 +1474,8 @@ def install(  # noqa: PLR0913
         )
 
         if scope is InstallScope.USER:
-            ensure_user_dirs()
+            if not dry_run:
+                ensure_user_dirs()
             logger.progress("Installing to user scope (~/.apm/)")
             _scope_warn = warn_unsupported_user_scope()
             if _scope_warn:
@@ -1467,6 +1486,12 @@ def install(  # noqa: PLR0913
         apm_dir = get_apm_dir(scope)
         # Display name for messages (short for project scope, full for user scope)
         manifest_display = str(manifest_path) if scope is InstallScope.USER else APM_YML_FILENAME
+        manifest_path, dry_run_manifest_tmp = _prepare_dry_run_manifest_path(
+            manifest_path,
+            dry_run=dry_run,
+            user_scope=scope is InstallScope.USER,
+            has_packages=bool(packages),
+        )
 
         # Project root for integration (used by both dep and local integration)
         from ..core.scope import get_deploy_root
@@ -1504,7 +1529,10 @@ def install(  # noqa: PLR0913
             if manifest_targets := manifest_targets_from_target_option(target):
                 config["targets"] = manifest_targets
             _create_minimal_apm_yml(config, target_path=manifest_path)
-            logger.success(f"Created {manifest_display}")
+            if dry_run:
+                logger.progress(f"Dry run: Would create {manifest_display}")
+            else:
+                logger.success(f"Created {manifest_display}")
             if manifest_targets:
                 logger.progress(
                     f"Targets set: {', '.join(manifest_targets)} (persisted to {manifest_display})"
@@ -1681,6 +1709,8 @@ def install(  # noqa: PLR0913
         # Restore cwd before summary rendering, regardless of the exit path.
         # Always close the transaction even if root restoration fails.
         close_install_contexts(_root_redirect, transaction)
+        if dry_run_manifest_tmp is not None:
+            dry_run_manifest_tmp.cleanup()
         # F5 (#1116): render minimal elapsed-time line on exit paths that
         # did not already render the full install summary. Best-effort:
         # never let a render failure mask the original exception/exit.
