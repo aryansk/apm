@@ -446,8 +446,11 @@ def _resolve_package_references(
         already_in_deps = identity in existing_identities
 
         verbose = bool(logger and logger.verbose)
-        # An already-known registry identity also skips the probe.
-        if existing_source_is_registry or should_skip_github_probe_for_dep(
+        # Semver constraints must be resolved by the git semver resolver before
+        # any exact-ref probe. Registry-backed identities keep their own check.
+        if dep_ref.ref_kind == "semver":
+            package_accessible = True
+        elif existing_source_is_registry or should_skip_github_probe_for_dep(
             dep_ref, default_registry
         ):
             ref_ok, ref_err = validate_registry_ref(dep_ref)

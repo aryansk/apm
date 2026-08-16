@@ -183,6 +183,29 @@ class TestResolvePackageReferencesDuplicateDetection:
         assert changed is True
         assert current_deps == ["danielmeppiel/genesis#v0.4.0"]
 
+    @patch("apm_cli.commands.install._validate_package_exists")
+    @patch("apm_cli.commands.install.DependencyReference")
+    def test_git_semver_range_skips_literal_ref_preflight(self, mock_dep_cls, mock_validate):
+        ref = _make_dep_ref(
+            "owner/repo/packages/skill#>=1.0.0",
+            "github.com/owner/repo/packages/skill",
+        )
+        ref.ref_kind = "semver"
+        mock_dep_cls.parse.return_value = ref
+        mock_dep_cls.is_local_path.return_value = False
+        _disable_gitlab_direct_probe(mock_dep_cls)
+
+        valid, invalid, validated, _mkt, _entries, _changed = _resolve_package_references(
+            ["owner/repo/packages/skill#>=1.0.0"],
+            [],
+            set(),
+        )
+
+        mock_validate.assert_not_called()
+        assert invalid == []
+        assert valid == [("owner/repo/packages/skill#>=1.0.0", False)]
+        assert validated == ["owner/repo/packages/skill#>=1.0.0"]
+
 
 class TestResolvePackageReferencesInvalidInput:
     """Invalid packages must not mutate the identity set."""
