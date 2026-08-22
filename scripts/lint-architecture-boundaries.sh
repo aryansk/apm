@@ -215,6 +215,24 @@ if [ "$agents_source_attribution_status" -ne 0 ]; then
     echo "$agents_source_attribution_output"
     violations=$((violations + 1))
 fi
+agents_compiler="src/apm_cli/compilation/agents_compiler.py"
+distributed_prepare_count=$(grep -Ec '^    def _prepare_distributed_file\(' "$agents_compiler" || true)
+distributed_nested_boundary_call_count=$(grep -Fc \
+    'nested_root = self._nested_git_repository_root(agents_path.parent)' "$agents_compiler" || true)
+distributed_nested_boundary_reference_count=$(grep -Fc \
+    '_nested_git_repository_root(' "$agents_compiler" || true)
+distributed_git_metadata_predicate_count=$(grep -Fc \
+    'git_metadata.is_file() or git_metadata.is_dir()' "$agents_compiler" || true)
+distributed_prepare_call_count=$(grep -Fc \
+    'prepared_content = self._prepare_distributed_file(' "$agents_compiler" || true)
+if [ "$distributed_prepare_count" -ne 1 ] \
+    || [ "$distributed_nested_boundary_call_count" -ne 1 ] \
+    || [ "$distributed_nested_boundary_reference_count" -ne 2 ] \
+    || [ "$distributed_git_metadata_predicate_count" -ne 1 ] \
+    || [ "$distributed_prepare_call_count" -ne 2 ]; then
+    echo "[x] Distributed AGENTS writes must prepare through one nested Git boundary"
+    violations=$((violations + 1))
+fi
 hook_file="src/apm_cli/integration/hook_integrator.py"
 validation_line=$(grep -n 'if not validation\.valid:' "$hook_file" | tail -1 | cut -d: -f1)
 continue_line=$(awk -v start="$validation_line" 'NR > start && /continue/ {print NR; exit}' "$hook_file")

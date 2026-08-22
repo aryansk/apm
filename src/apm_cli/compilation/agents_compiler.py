@@ -703,21 +703,22 @@ class AgentsCompiler:
                     symbol="info",
                 )
 
-        # Handle dry-run mode (preview placement without writing files)
+        pending_outputs: dict[Path, str] = {}
+        for agents_path, content in distributed_result.content_map.items():
+            try:
+                prepared_content = self._prepare_distributed_file(agents_path, content, config)
+                if prepared_content is not None:
+                    pending_outputs[agents_path] = prepared_content
+            except (OSError, ValueError) as e:
+                self.errors.append(f"Failed to write {agents_path}: {e!s}")
+
+        # Handle dry-run mode after the canonical preparation gate so its
+        # reported placements match the files a real compile can write.
         if config.dry_run:
-            # Count files that would be written (directories that exist)
-            successful_writes = 0
-            for agents_path in distributed_result.content_map.keys():  # noqa: SIM118
-                if agents_path.parent.exists():
-                    successful_writes += 1
-
-            # Update stats with actual files that would be written
             if distributed_result.stats:
-                distributed_result.stats["agents_files_generated"] = successful_writes
-
-            # Don't write files in preview mode - output already shown above
+                distributed_result.stats["agents_files_generated"] = len(pending_outputs)
             return CompilationResult(
-                success=True,
+                success=len(self.errors) == 0,
                 output_path="Preview mode - no files written",
                 content=self._generate_placement_summary(distributed_result),
                 warnings=self.warnings + distributed_result.warnings,
@@ -727,32 +728,11 @@ class AgentsCompiler:
 
         # Write distributed AGENTS.md files
         successful_writes = 0
-        total_content_entries = len(distributed_result.content_map)  # noqa: F841
-
-        pending_outputs: dict[Path, str] = {}
-        for agents_path, content in distributed_result.content_map.items():
-            # Issue #2560 case B: never write into a nested independent Git
-            # repository. A sub-directory that is the root of its own worktree
-            # (.git file, not directory) belongs to another repo; mirror the
-            # boundary check the orphan sweep uses and skip it with a warning.
-            if self._is_nested_git_worktree(agents_path.parent):
-                rel = portable_relpath(agents_path.parent, self.base_dir)
-                self.warnings.append(
-                    f"Skipping AGENTS.md at {agents_path.name} in nested Git worktree "
-                    f"{rel}: it belongs to a separate repository"
-                )
-                continue
-            try:
-                pending_outputs[agents_path] = self._prepare_distributed_file(
-                    agents_path, content, config
-                )
-            except (OSError, ValueError) as e:
-                self.errors.append(f"Failed to write {agents_path}: {e!s}")
         if pending_outputs:
             from .output_writer import CompiledOutputPolicyError, CompiledOutputWriter
 
             try:
-                CompiledOutputWriter().write_many(pending_outputs)
+                CompiledOutputWriter().write_many(pending_outputs, preserve_line_endings=True)
                 successful_writes = len(pending_outputs)
             except (OSError, CompiledOutputPolicyError) as exc:
                 self.errors.append(f"Failed to write distributed output batch: {exc}")
@@ -1635,7 +1615,8 @@ class AgentsCompiler:
                     "Create it with the managed-section markers first, "
                     "or set agents_md.mode: full in apm.yml for initial generation."
                 )
-            existing = target.read_text(encoding="utf-8")
+            with target.open(encoding="utf-8", newline="") as handle:
+                existing = handle.read()
             try:
                 content = apply_managed_section(
                     existing,
@@ -1677,8 +1658,8 @@ class AgentsCompiler:
 
     def _prepare_distributed_file(
         self, agents_path: Path, content: str, config: CompilationConfig
-    ) -> str:
-        """Build one distributed AGENTS.md output without mutating disk.
+    ) -> str | None:
+        """Build one eligible distributed AGENTS.md output without mutating disk.
 
         Args:
             agents_path (Path): Path to write the AGENTS.md file.
@@ -1686,6 +1667,16 @@ class AgentsCompiler:
             config (CompilationConfig): Compilation configuration.
         """
         try:
+            nested_root = self._nested_git_repository_root(agents_path.parent)
+            if nested_root is not None:
+                agents_rel = portable_relpath(agents_path, self.base_dir)
+                root_rel = portable_relpath(nested_root, self.base_dir)
+                self.warnings.append(
+                    f"Skipping AGENTS.md at {agents_rel}: nested Git repository "
+                    f"{root_rel} belongs to a separate repository"
+                )
+                return None
+
             # Handle constitution injection for distributed files
             final_content = content
 
@@ -1722,31 +1713,24 @@ class AgentsCompiler:
         """Write one distributed file through the canonical writer."""
         from .output_writer import CompiledOutputWriter
 
-        # Issue #2560 case B: never write into a nested independent Git
-        # repository. A sub-directory that is the root of its own worktree
-        # (.git file, not directory) belongs to another repo; mirror the
-        # boundary check the orphan sweep uses and skip it with a warning.
-        if self._is_nested_git_worktree(agents_path.parent):
-            rel = portable_relpath(agents_path.parent, self.base_dir)
-            self.warnings.append(
-                f"Skipping AGENTS.md at {agents_path.name} in nested Git worktree "
-                f"{rel}: it belongs to a separate repository"
-            )
-            _logger.debug("Skipped AGENTS.md write inside nested Git worktree: %s", agents_path)
+        prepared_content = self._prepare_distributed_file(agents_path, content, config)
+        if prepared_content is None:
             return
 
-        final_content = self._prepare_distributed_file(agents_path, content, config)
-        CompiledOutputWriter().write(agents_path, final_content)
+        CompiledOutputWriter().write(agents_path, prepared_content, preserve_line_endings=True)
 
-    @staticmethod
-    def _is_nested_git_worktree(directory: Path) -> bool:
-        """Return True if *directory* is the root of an independent Git worktree.
-
-        Matches the orphan-sweep boundary rule (distributed_compiler.py): a
-        nested repo root carries a ``.git`` *file* (a gitfile pointing at the
-        real metadata store), not a ``.git`` directory.
-        """
-        return bool((directory / ".git").is_file())
+    def _nested_git_repository_root(self, directory: Path) -> Path | None:
+        """Return a nested repository root below the compiler base, if any."""
+        base_dir = self.base_dir.resolve()
+        current = directory.resolve()
+        while current != base_dir:
+            git_metadata = current / ".git"
+            if git_metadata.is_file() or git_metadata.is_dir():
+                return current
+            if current == current.parent:
+                return None
+            current = current.parent
+        return None
 
     def _display_placement_preview(self, distributed_result) -> None:
         """Display placement preview for --show-placement mode.

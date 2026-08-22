@@ -396,9 +396,13 @@ class TestManagedSectionDistributed:
         subdir = tmp_path / "src"
         subdir.mkdir()
         subdir_agents = subdir / "AGENTS.md"
-        subdir_agents.write_text(
-            f"# Old content\n\n{start}\nOld APM block.\n{end}\n\nHuman content that must survive.\n"
+        original = (
+            f"# Old content\r\n\r\n{start}\r\nOld APM block.\r\n{end}"
+            "\r\n\r\nHuman content that must survive.\r\n"
         )
+        subdir_agents.write_bytes(original.encode())
+        before, _, after = original.partition(start)
+        _, end_marker, after = after.partition(end)
 
         config = CompilationConfig(
             agents_md_mode="managed_section",
@@ -414,23 +418,48 @@ class TestManagedSectionDistributed:
         assert "Human content that must survive." in written
         assert "New APM block." in written
         assert "Old APM block." not in written
+        written_bytes = subdir_agents.read_bytes()
+        assert written_bytes.startswith((before + start).encode())
+        assert written_bytes.endswith((end_marker + after).encode())
 
-    def test_distributed_subdir_agents_md_skips_nested_git_worktree(self, tmp_path):
-        """A nested independent Git repo root is never written to (#2560 case B)."""
+    @pytest.mark.parametrize("git_metadata_is_file", [False, True])
+    def test_distributed_subdir_agents_md_skips_nested_git_repository(
+        self, tmp_path, git_metadata_is_file
+    ):
+        """Nested Git repositories and worktrees are never written to (#2560 case B)."""
         from apm_cli.compilation.agents_compiler import AgentsCompiler, CompilationConfig
 
         nested = tmp_path / "nested"
         nested.mkdir()
-        # A gitfile (not a directory) marks an independent worktree root.
-        (nested / ".git").write_text("gitdir: /elsewhere/.git\n", encoding="utf-8")
-        subdir_agents = nested / "AGENTS.md"
+        git_metadata = nested / ".git"
+        if git_metadata_is_file:
+            git_metadata.write_text("gitdir: /elsewhere/.git\n", encoding="utf-8")
+        else:
+            git_metadata.mkdir()
+        subdir_agents = nested / "src" / "AGENTS.md"
 
         config = CompilationConfig(agents_md_mode="full", dry_run=False)
         compiler = AgentsCompiler(str(tmp_path))
         compiler._write_distributed_file(subdir_agents, "Should not be written.", config)
 
         assert not subdir_agents.exists()
-        assert any("nested Git worktree" in w for w in compiler.warnings)
+        assert any("nested Git repository" in warning for warning in compiler.warnings)
+
+    def test_distributed_root_agents_md_allows_base_git_repository(self, tmp_path):
+        """The compiler base repository is not mistaken for a nested boundary."""
+        from apm_cli.compilation.agents_compiler import AgentsCompiler, CompilationConfig
+
+        (tmp_path / ".git").mkdir()
+        root_agents = tmp_path / "AGENTS.md"
+        compiler = AgentsCompiler(str(tmp_path))
+        compiler._write_distributed_file(
+            root_agents,
+            "Root content.",
+            CompilationConfig(agents_md_mode="full", dry_run=False),
+        )
+
+        assert root_agents.read_text() == "Root content."
+        assert compiler.warnings == []
 
     def test_distributed_root_agents_md_full_mode_overwrites(self, tmp_path):
         """Root AGENTS.md is fully overwritten when mode is 'full' (default)."""

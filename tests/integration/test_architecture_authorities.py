@@ -1015,6 +1015,55 @@ def test_nested_worktree_cleanup_guard_rejects_unbounded_agents_scan(
     assert "Nested worktree cleanup must prune .git-file roots" in result.stdout
 
 
+@pytest.mark.parametrize(
+    ("guard", "replacement"),
+    [
+        (
+            "nested_root = self._nested_git_repository_root(agents_path.parent)",
+            "nested_root = None",
+        ),
+        ("git_metadata.is_file() or git_metadata.is_dir()", "False"),
+    ],
+)
+def test_distributed_agents_write_guard_rejects_nested_repository_bypass(
+    tmp_path: Path, guard: str, replacement: str
+) -> None:
+    """The preparation boundary must reject a nested-repository bypass."""
+    root = Path(__file__).parents[2]
+    sandbox = tmp_path / "repo"
+    shutil.copytree(
+        root,
+        sandbox,
+        ignore=shutil.ignore_patterns(
+            ".git",
+            ".venv",
+            ".pytest_cache",
+            "__pycache__",
+            "build",
+            "dist",
+            "node_modules",
+        ),
+    )
+    compiler_path = sandbox / "src/apm_cli/compilation/agents_compiler.py"
+    source = compiler_path.read_text(encoding="utf-8")
+    compiler_path.write_text(
+        source.replace(guard, replacement, 1),
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        ("bash", "scripts/lint-architecture-boundaries.sh"),
+        cwd=sandbox,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=300,
+    )
+
+    assert result.returncode == 1
+    assert "Distributed AGENTS writes must prepare through one nested Git boundary" in result.stdout
+
+
 def test_experimental_target_hints_have_single_owner() -> None:
     """Experimental target enable hints must route through one helper."""
     root = Path(__file__).parents[2]

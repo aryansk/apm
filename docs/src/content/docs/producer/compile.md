@@ -244,10 +244,10 @@ you can omit `start_marker` and `end_marker` if you use those verbatim.
 - The start marker must appear before the end marker; reversed order raises a loud error.
 - `start_marker` and `end_marker` must be distinct non-empty strings.
 - Content outside the markers is preserved verbatim across every compile
-  run for the root `AGENTS.md`; only the block between the markers is
-  replaced.
-- In distributed compile mode, subdirectory `AGENTS.md` files remain fully
-  APM-owned and are overwritten on each run.
+  run; only the block between the markers is replaced.
+- In distributed compile mode, the same marker rules apply to every generated
+  `AGENTS.md`. A placement in a nested Git repository (a `.git` directory or
+  gitfile), including its descendants, is skipped with a warning.
 
 ## Global compilation (-g)
 
