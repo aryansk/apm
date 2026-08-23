@@ -41,7 +41,6 @@ def test_embedded_git_url_subpath_guard_rejects_provider_bypass() -> None:
     )
 
     assert any(
-        violation.rule_id == RULE_ID
-        and "Embedded git URL subpath validation" in violation.message
+        violation.rule_id == RULE_ID and "Embedded git URL subpath validation" in violation.message
         for violation in report.violations
     )

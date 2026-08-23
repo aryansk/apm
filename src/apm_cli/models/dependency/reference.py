@@ -651,6 +651,10 @@ class DependencyReference(ProviderCoordinateMixin):
             return  # bare shorthand or other form -- not in scope
 
         path_part = path_part.split("#")[0].split("?")[0]
+        decoded_path = urllib.parse.unquote(path_part)
+        while decoded_path != path_part:
+            path_part = decoded_path
+            decoded_path = urllib.parse.unquote(path_part)
         segments = [s for s in path_part.replace("\\", "/").split("/") if s]
         if len(segments) < 3:
             return  # too few segments to contain an interior primitive name
@@ -675,9 +679,8 @@ class DependencyReference(ProviderCoordinateMixin):
             # A .git segment followed by an APM primitive is instead an
             # unambiguous embedded subpath, even on GitLab.
             for idx, seg in enumerate(segments[:-1]):
-                if (
-                    seg.endswith(".git")
-                    and segments[idx + 1] in DependencyReference._APM_PRIMITIVE_DIRS
+                if seg.endswith(".git") and any(
+                    tail in DependencyReference._APM_PRIMITIVE_DIRS for tail in segments[idx + 1 :]
                 ):
                     DependencyReference._raise_embedded_subpath_error(raw)
             return

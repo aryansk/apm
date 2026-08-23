@@ -603,14 +603,14 @@ class TestFQDNVirtualPaths:
         assert dep.virtual_path == "prompts/file.prompt.md"
         assert dep.reference == "v2.0"
 
-    def test_https_url_with_path_rejected(self):
-        """HTTPS git URLs can't embed virtual paths -- use dict format with path: instead."""
-        with pytest.raises(ValueError, match=r"A subpath cannot be embedded in a git URL"):
+    def test_https_url_with_virtual_file_path_is_rejected(self) -> None:
+        """HTTPS git URLs cannot embed virtual files."""
+        with pytest.raises(ValueError, match="virtual file extension"):
             DependencyReference.parse("https://gitlab.com/acme/repo/prompts/file.prompt.md")
 
-    def test_ssh_url_with_path_rejected(self):
-        """SSH git URLs can't embed virtual paths -- use dict format with path: instead."""
-        with pytest.raises(ValueError, match=r"A subpath cannot be embedded in a git URL"):
+    def test_ssh_url_with_virtual_file_path_is_rejected(self) -> None:
+        """SSH git URLs cannot embed virtual files."""
+        with pytest.raises(ValueError, match="virtual file extension"):
             DependencyReference.parse("git@gitlab.com:acme/repo/prompts/code-review.prompt.md")
 
 
@@ -1383,6 +1383,9 @@ class TestEmbeddedSubpathInGitUrl:
             "git@github.com:org/repo/collections/core.git",
             "ssh://git@github.com/org/repo/collections/core.git",
             "https://gitlab.com/ai/platform/core.git/collections/security",
+            "git@gitlab.com:ai/platform/core.git/nested/collections/security",
+            "https://github.com/org/repo/%2563ollections/core.git",
+            "https://gitlab.com/ai/platform/core.git/%2563ollections/security",
         ),
     )
     def test_explicit_primitive_tail_raises_for_fixed_or_git_boundary(self, url) -> None:

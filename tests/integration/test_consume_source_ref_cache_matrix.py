@@ -213,9 +213,7 @@ _GITLAB_DEEP_BOUNDARY_ROWS = (
     _MatrixRow(
         id="gitlab-deep-https-string",
         source="https://gitlab.com/ai/platform/collections/consume-matrix.git",
-        rewrite_urls=(
-            "https://gitlab.com/ai/platform/collections/consume-matrix.git",
-        ),
+        rewrite_urls=("https://gitlab.com/ai/platform/collections/consume-matrix.git",),
         expected_host="gitlab.com",
         expected_kind="gitlab",
         expected_repo="ai/platform/collections/consume-matrix",
@@ -225,9 +223,7 @@ _GITLAB_DEEP_BOUNDARY_ROWS = (
     _MatrixRow(
         id="gitlab-deep-scp-string",
         source="git@gitlab.com:ai/platform/collections/consume-matrix.git",
-        rewrite_urls=(
-            "git@gitlab.com:ai/platform/collections/consume-matrix.git",
-        ),
+        rewrite_urls=("git@gitlab.com:ai/platform/collections/consume-matrix.git",),
         expected_host="gitlab.com",
         expected_kind="gitlab",
         expected_repo="ai/platform/collections/consume-matrix",
@@ -237,9 +233,7 @@ _GITLAB_DEEP_BOUNDARY_ROWS = (
     _MatrixRow(
         id="gitlab-deep-https-object",
         source="https://code.example.invalid/ai/platform/collections/consume-matrix.git",
-        rewrite_urls=(
-            "https://code.example.invalid/ai/platform/collections/consume-matrix.git",
-        ),
+        rewrite_urls=("https://code.example.invalid/ai/platform/collections/consume-matrix.git",),
         expected_host="code.example.invalid",
         expected_kind="gitlab",
         expected_repo="ai/platform/collections/consume-matrix",
@@ -249,9 +243,7 @@ _GITLAB_DEEP_BOUNDARY_ROWS = (
     _MatrixRow(
         id="gitlab-deep-scp-object",
         source="git@code.example.invalid:ai/platform/collections/consume-matrix.git",
-        rewrite_urls=(
-            "git@code.example.invalid:ai/platform/collections/consume-matrix.git",
-        ),
+        rewrite_urls=("git@code.example.invalid:ai/platform/collections/consume-matrix.git",),
         expected_host="code.example.invalid",
         expected_kind="gitlab",
         expected_repo="ai/platform/collections/consume-matrix",
@@ -631,6 +623,7 @@ def test_gitlab_deep_repository_boundary(
     (
         "https://github.com/org/repo.git/collections/security",
         {"git": "git@github.com:org/repo/collections/security.git"},
+        "https://gitlab.com/ai/platform/collections/consume-matrix.git/collections/security",
     ),
 )
 def test_embedded_primitive_tail_fails_before_git_state(
@@ -654,7 +647,8 @@ def test_embedded_primitive_tail_fails_before_git_state(
     )
 
     assert result.returncode != 0
-    assert "A subpath cannot be embedded in a git URL" in result.stdout + result.stderr
+    output = " ".join((result.stdout + result.stderr).split())
+    assert "A subpath cannot be embedded in a git URL" in output
     assert not (scenario.project_root / "apm.lock.yaml").exists()
     assert not (scenario.project_root / "apm_modules").exists()
     assert list(scenario.isolated.cache_root.iterdir()) == []
