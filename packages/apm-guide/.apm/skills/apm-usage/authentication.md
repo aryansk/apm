@@ -40,6 +40,13 @@ registration stays SSH when APM generates the concrete `git:` and `path:`
 dependency. Existing SSH keys keep working instead of the dependency being
 rewritten to HTTPS.
 
+Generic marketplace HTTPS sources may use the native Git credential helper from
+your Git configuration. APM still sets `GIT_TERMINAL_PROMPT=0` and removes
+platform token variables, `GIT_TOKEN`, and environment-based authorization-header
+channels before the fetch. Plain `http://` marketplace registration is rejected;
+any attempted fetch isolates Git configuration and
+suppress helpers; generic SSH sources are token-free and use noninteractive SSH.
+
 ## GitLab hosts
 
 `gitlab.com` is detected automatically. For self-managed GitLab, set

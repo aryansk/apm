@@ -1,0 +1,145 @@
+"""Installed-CLI lifecycle proof for generic marketplace HTTPS helpers."""
+
+from __future__ import annotations
+
+import json
+import os
+import shutil
+import stat
+import subprocess
+import sys
+from pathlib import Path
+
+import pytest
+
+from tests.utils.apm_lifecycle_runner import ApmLifecycleRunner
+from tests.utils.isolated_apm_environment import IsolatedApmEnvironment
+from tests.utils.local_git_http_server import LocalGitHttpServerFactory
+from tests.utils.local_git_repository import LocalGitRepositoryFactory
+
+pytestmark = [
+    pytest.mark.integration,
+    pytest.mark.e2e,
+    pytest.mark.requires_e2e_mode,
+]
+
+_HELPER_PASSWORD = "fixture-marketplace-password"
+_SENTINEL_NAMES = (
+    "ADO_APM_PAT",
+    "GH_TOKEN",
+    "GITHUB_APM_PAT",
+    "GITHUB_TOKEN",
+    "GIT_HTTP_EXTRAHEADER",
+    "GIT_TOKEN",
+)
+
+
+def _real_git() -> Path:
+    executable = shutil.which("git")
+    if executable is None:
+        pytest.skip("git executable not available")
+    return Path(executable).resolve()
+
+
+def _write_credential_helper(home: Path, log_path: Path) -> Path:
+    """Create a real helper that records only sentinel names, never values."""
+    helper = home / "credential-helper.py"
+    helper.write_text(
+        f"#!{sys.executable}\n"
+        "import json\n"
+        "import os\n"
+        "from pathlib import Path\n"
+        f"names = {list(_SENTINEL_NAMES)!r}\n"
+        "Path(os.environ['APM_TEST_HELPER_LOG']).write_text(\n"
+        "    json.dumps([name for name in names if name in os.environ]), encoding='utf-8'\n"
+        ")\n"
+        "print('username=x-access-token')\n"
+        f"print('password={_HELPER_PASSWORD}')\n",
+        encoding="ascii",
+    )
+    helper.chmod(helper.stat().st_mode | stat.S_IXUSR)
+    subprocess.run(
+        ("git", "config", "--file", str(home / ".gitconfig"), "credential.helper", f"!{helper}"),
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    return helper
+
+
+def test_generic_https_marketplace_add_uses_native_credential_helper(
+    tmp_path: Path,
+    apm_binary_path: Path,
+) -> None:
+    """Add and list one generic HTTPS source through a real Git helper."""
+    isolated = IsolatedApmEnvironment.create(tmp_path / "scenario", base_env=os.environ)
+    helper_log = isolated.root / "credential-helper.json"
+    _write_credential_helper(isolated.home, helper_log)
+    environment = isolated.subprocess_env()
+    environment.update(
+        {
+            "ADO_APM_PAT": "ado-sentinel",
+            "GH_TOKEN": "gh-sentinel",
+            "GITHUB_APM_PAT": "github-apm-sentinel",
+            "GITHUB_TOKEN": "github-sentinel",
+            "GIT_HTTP_EXTRAHEADER": "Authorization: sentinel",
+            "GIT_TOKEN": "git-sentinel",
+            "APM_TEST_HELPER_LOG": str(helper_log),
+            "GIT_ALLOW_PROTOCOL": "file:http:https",
+        }
+    )
+    repositories = LocalGitRepositoryFactory(isolated.repository_root, env=environment)
+    repository = repositories.create("generic-marketplace")
+    (repository.worktree / "marketplace.json").write_text(
+        json.dumps({"name": "generic-marketplace", "plugins": []}),
+        encoding="utf-8",
+    )
+    repositories.commit(repository, message="seed marketplace")
+    server_factory = LocalGitHttpServerFactory(
+        isolated.repository_root,
+        real_git=_real_git(),
+        env=environment,
+    )
+
+    with server_factory.start(
+        (repository,),
+        password=_HELPER_PASSWORD,
+        private_repositories=(repository,),
+    ) as server:
+        remote_url = f"https://gitea.example.test/{repository.origin.name}"
+        subprocess.run(
+            (
+                "git",
+                "config",
+                "--file",
+                str(isolated.home / ".gitconfig"),
+                "--add",
+                f"url.{server.proxy_url}/.insteadOf",
+                "https://gitea.example.test/",
+            ),
+            check=True,
+            capture_output=True,
+            text=True,
+            env=environment,
+        )
+        runner = ApmLifecycleRunner((str(apm_binary_path),))
+        add_result = runner.run(
+            ("marketplace", "add", remote_url, "--name", "generic-marketplace"),
+            scenario_id="marketplace-generic-https-native-helper",
+            cwd=isolated.work_root,
+            env=environment,
+        )
+        list_result = runner.run(
+            ("marketplace", "list"),
+            scenario_id="marketplace-generic-https-native-helper",
+            cwd=isolated.work_root,
+            env=environment,
+        )
+
+    assert add_result.returncode == 0, add_result.stderr
+    assert list_result.returncode == 0, list_result.stderr
+    assert helper_log.exists()
+    assert json.loads(helper_log.read_text(encoding="utf-8")) == []
+    saved = json.loads((isolated.config_root / "marketplaces.json").read_text(encoding="utf-8"))
+    assert len(saved["marketplaces"]) == 1
+    assert saved["marketplaces"][0]["name"] == "generic-marketplace"
