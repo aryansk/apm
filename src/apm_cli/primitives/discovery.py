@@ -569,7 +569,7 @@ def _discover_skill_in_directory(
         source (str): Source identifier for the skill.
     """
     skill_path = directory / "SKILL.md"
-    if skill_path.exists() and _is_readable(skill_path):
+    if not skill_path.is_symlink() and skill_path.exists() and _is_readable(skill_path):
         try:
             skill = parse_skill_file(skill_path, source=source)
             collection.add_primitive(skill)

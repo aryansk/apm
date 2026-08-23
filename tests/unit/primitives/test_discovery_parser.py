@@ -332,6 +332,23 @@ class TestScanDirectoryWithSource(unittest.TestCase):
 
         self.assertEqual(len(collection.instructions), 0)
 
+    def test_dependency_skill_symlink_is_not_discovered(self):
+        """Dependency skills do not load content from outside their package."""
+        dep_dir = Path(self.tmp) / "owner" / "repo"
+        target = Path(self.tmp) / "outside-skill.md"
+        _write(target, SKILL_CONTENT)
+        link = dep_dir / "SKILL.md"
+        link.parent.mkdir(parents=True)
+        try:
+            link.symlink_to(target)
+        except OSError:
+            self.skipTest("file symlinks are unavailable on this platform")
+
+        collection = PrimitiveCollection()
+        scan_directory_with_source(dep_dir, collection, source="dependency:owner/repo")
+
+        self.assertEqual(len(collection.skills), 0)
+
     def test_parse_error_in_dep_primitive_warns_and_continues(self):
         dep_dir = Path(self.tmp) / "owner" / "repo"
         _write(
