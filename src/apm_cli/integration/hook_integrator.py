@@ -485,7 +485,7 @@ class HookIntegrator(BaseIntegrator):
             "rendered_json": json.dumps(rewritten, indent=2, sort_keys=True),
         }
 
-    def find_hook_files(self, package_path: Path) -> list[Path]:
+    def find_hook_files(self, package_path: Path, source_plan=None) -> list[Path]:
         """Find all hook JSON files in a package.
 
         Searches in:
@@ -523,7 +523,7 @@ class HookIntegrator(BaseIntegrator):
                     seen_stems.add(stem_key)
                     hook_files.append(f)
 
-        return hook_files
+        return self.filter_authorized_files(hook_files, source_plan)
 
     def _parse_hook_json(self, hook_file: Path) -> dict | None:
         """Parse a hook JSON file and return the data dict.
@@ -1005,6 +1005,7 @@ class HookIntegrator(BaseIntegrator):
         diagnostics=None,
         target=None,
         user_scope: bool = False,
+        source_plan=None,
     ) -> HookIntegrationResult:
         """Integrate hooks from a package into hooks dir (Copilot target).
 
@@ -1023,7 +1024,7 @@ class HookIntegrator(BaseIntegrator):
         Returns:
             HookIntegrationResult: Results of the integration operation
         """
-        hook_files = self.find_hook_files(package_info.install_path)
+        hook_files = self.find_hook_files(package_info.install_path, source_plan)
         package_name = self._get_package_name(package_info, project_root)
         # Per-file target routing always runs.  A dep-level ``targets:`` list
         # restricts WHICH targets are active (upstream in services.py); it must
@@ -1181,6 +1182,7 @@ class HookIntegrator(BaseIntegrator):
                 target_paths=target_paths,
                 hook_descriptor_files=set(hook_files),
                 exclude_json_files=True,
+                source_plan=source_plan,
             )
             scripts_copied += copy_result.scripts_copied
             scripts_adopted += copy_result.files_adopted
@@ -1211,6 +1213,7 @@ class HookIntegrator(BaseIntegrator):
         diagnostics=None,
         target=None,
         user_scope: bool = False,
+        source_plan=None,
     ) -> HookIntegrationResult:
         """Integrate hooks by merging into a target-specific JSON config.
 
@@ -1235,7 +1238,7 @@ class HookIntegrator(BaseIntegrator):
 
         _deploy_root_for_rewrite = self._deploy_root_for_hook_rewrite(project_root, user_scope)
 
-        hook_files = self.find_hook_files(package_info.install_path)
+        hook_files = self.find_hook_files(package_info.install_path, source_plan)
         package_name = self._get_package_name(package_info, project_root)
         # Per-file target routing always runs; a dep-level ``targets:`` list
         # narrows the active target set upstream but must not disable per-file
@@ -1529,6 +1532,7 @@ class HookIntegrator(BaseIntegrator):
                 diagnostics=diagnostics,
                 target_paths=target_paths,
                 hook_descriptor_files=set(hook_files),
+                source_plan=source_plan,
             )
             scripts_copied += copy_result.scripts_copied
             scripts_adopted += copy_result.files_adopted
@@ -1665,6 +1669,7 @@ class HookIntegrator(BaseIntegrator):
         user_scope: bool = False,
         dep_targets_active: bool = False,
         allowed_targets: set[str] | None = None,
+        source_plan=None,
     ) -> "HookIntegrationResult":
         """Integrate hooks for a single *target*.
 
@@ -1689,6 +1694,7 @@ class HookIntegrator(BaseIntegrator):
                 diagnostics=diagnostics,
                 target=target,
                 user_scope=user_scope,
+                source_plan=source_plan,
             )
 
         if target.name == "kiro":
@@ -1703,6 +1709,7 @@ class HookIntegrator(BaseIntegrator):
                 diagnostics=diagnostics,
                 target=target,
                 user_scope=user_scope,
+                source_plan=source_plan,
             )
 
         config = _MERGE_HOOK_TARGETS.get(target.name)
@@ -1716,6 +1723,7 @@ class HookIntegrator(BaseIntegrator):
                 diagnostics=diagnostics,
                 target=target,
                 user_scope=user_scope,
+                source_plan=source_plan,
             )
 
         return HookIntegrationResult(

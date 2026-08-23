@@ -110,6 +110,7 @@ def copy_deployed_hook_bundle(
     target_paths: list[Path],
     hook_descriptor_files: set[Path] | None = None,
     exclude_json_files: bool = False,
+    source_plan=None,
 ) -> HookBundleCopyResult:
     """Copy each referenced script's whole hooks root and module type.
 
@@ -156,6 +157,10 @@ def copy_deployed_hook_bundle(
                 or not source_file.is_file()
                 or source_file.name in {"package.json", MARKER_FILENAME}
                 or _is_root_hook_descriptor(source_file, source_root, descriptor_files)
+            ):
+                continue
+            if source_plan is not None and not source_plan.includes(
+                portable_relpath(source_file, source_plan.source_root)
             ):
                 continue
             source_rel = source_file.relative_to(source_root)

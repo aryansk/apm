@@ -9,6 +9,11 @@ import pytest
 
 from apm_cli.install.deployable_source_plan import DeployableSourcePlan
 from apm_cli.install.helpers.security_scan import _pre_deploy_security_scan
+from apm_cli.integration.agent_integrator import AgentIntegrator
+from apm_cli.integration.command_integrator import CommandIntegrator
+from apm_cli.integration.hook_integrator import HookIntegrator
+from apm_cli.integration.instruction_integrator import InstructionIntegrator
+from apm_cli.integration.prompt_integrator import PromptIntegrator
 from apm_cli.security.gate import SecurityGate
 from apm_cli.utils.diagnostics import DiagnosticCollector
 
@@ -107,3 +112,46 @@ def test_nested_deployable_hidden_character_blocks_without_force(tmp_path: Path)
     assert verdict.should_block is True
     assert verdict.scanned_files == frozenset({"skills/hostile/SKILL.md"})
     assert _pre_deploy_security_scan(plan, DiagnosticCollector(), package_name="hostile") is False
+
+
+@pytest.mark.parametrize(
+    ("primitive", "relative_path", "integrator_type", "finder_name"),
+    [
+        ("prompts", "prompt.prompt.md", PromptIntegrator, "find_prompt_files"),
+        ("agents", "agent.agent.md", AgentIntegrator, "find_agent_files"),
+        ("commands", "command.prompt.md", CommandIntegrator, "find_prompt_files"),
+        (
+            "instructions",
+            ".apm/instructions/project.instructions.md",
+            InstructionIntegrator,
+            "find_instruction_files",
+        ),
+        ("hooks", ".apm/hooks/pre-commit.json", HookIntegrator, "find_hook_files"),
+    ],
+)
+def test_primitive_discovery_excludes_symlink_sources_from_plan(
+    tmp_path: Path,
+    primitive: str,
+    relative_path: str,
+    integrator_type,
+    finder_name: str,
+) -> None:
+    """Primitive materializers must consume the plan's symlink exclusion."""
+    deployable = tmp_path / relative_path
+    deployable.parent.mkdir(parents=True, exist_ok=True)
+    deployable.write_text("clean\n", encoding="utf-8")
+    symlink = deployable.with_name(f"linked-{deployable.name}")
+    symlink.symlink_to(deployable)
+
+    plan = DeployableSourcePlan.create(
+        _package(tmp_path),
+        [_primitive_target(primitive)],
+        skill_subset=None,
+        hooks_approved=primitive == "hooks",
+        canvas_approved=False,
+        skip_bin=True,
+    )
+
+    files = getattr(integrator_type(), finder_name)(tmp_path, plan)
+
+    assert files == [deployable]

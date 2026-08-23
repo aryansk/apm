@@ -199,6 +199,7 @@ def _copy_scripts(
     diagnostics,
     target_paths: list[Path],
     hook_descriptor_files: set[Path],
+    source_plan=None,
 ) -> tuple[int, int]:
     """Copy Kiro hook scripts and return copied/adopted counts."""
     copy_result = copy_deployed_hook_bundle(
@@ -212,6 +213,7 @@ def _copy_scripts(
         diagnostics=diagnostics,
         target_paths=target_paths,
         hook_descriptor_files=hook_descriptor_files,
+        source_plan=source_plan,
     )
     return copy_result.scripts_copied, copy_result.files_adopted
 
@@ -226,6 +228,7 @@ def integrate_kiro_hooks(
     diagnostics=None,
     target=None,
     user_scope: bool = False,
+    source_plan=None,
 ) -> HookIntegrationResult:
     """Integrate hooks as one Kiro JSON file per hook action."""
     root_dir = target.root_dir if target else ".kiro"
@@ -233,7 +236,7 @@ def integrate_kiro_hooks(
     if not target_dir.exists():
         return HookIntegrationResult(0, 0, 0, [])
 
-    hook_files = integrator.find_hook_files(package_info.install_path)
+    hook_files = integrator.find_hook_files(package_info.install_path, source_plan)
     package_name = integrator._get_package_name(package_info, project_root)
     # Per-file target routing always runs; a dep-level ``targets:`` list narrows
     # the active target set upstream but must not disable per-file routing (see
@@ -301,6 +304,7 @@ def integrate_kiro_hooks(
             diagnostics,
             target_paths,
             set(hook_files),
+            source_plan,
         )
         scripts_copied += copied
         scripts_adopted += adopted_scripts

@@ -472,6 +472,7 @@ def integrate_package_primitives(  # noqa: PLR0913
                 "managed_files": managed_files,
                 "diagnostics": diagnostics,
                 "scope": scope,
+                "source_plan": source_plan,
             }
             # Hook integrator alone needs the scope signal: project-scope
             # deploys keep ``command`` paths repo-relative (#1394), user-scope

@@ -47,7 +47,7 @@ class DeployableSourcePlan:
                 paths.add(portable_relpath(path, source_root))
 
         def add_tree(root: Path) -> None:
-            if not root.is_dir():
+            if not root.is_dir() or root.is_symlink():
                 return
             for path in root.rglob("*"):
                 add_file(path)
@@ -93,6 +93,7 @@ class DeployableSourcePlan:
                 for skill_dir in skills_root.iterdir():
                     if (
                         skill_dir.is_dir()
+                        and not skill_dir.is_symlink()
                         and (skill_dir / "SKILL.md").is_file()
                         and (selected is None or skill_dir.name in selected)
                     ):

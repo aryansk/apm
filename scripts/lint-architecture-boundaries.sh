@@ -267,6 +267,22 @@ if [ "$deployable_plan_definition_count" -ne 1 ] \
     [ -n "$deployable_plan_duplicate_hits" ] && echo "$deployable_plan_duplicate_hits"
     violations=$((violations + 1))
 fi
+deployable_plan_consumers=(
+    src/apm_cli/integration/prompt_integrator.py
+    src/apm_cli/integration/agent_integrator.py
+    src/apm_cli/integration/command_integrator.py
+    src/apm_cli/integration/instruction_integrator.py
+    src/apm_cli/integration/hook_integrator.py
+    src/apm_cli/integration/hook_bundle.py
+    src/apm_cli/integration/kiro_hook_integrator.py
+    src/apm_cli/integration/canvas_integrator.py
+)
+for deployable_plan_consumer in "${deployable_plan_consumers[@]}"; do
+    if ! grep -q 'source_plan' "$deployable_plan_consumer"; then
+        echo "[x] Primitive materializers must consume the canonical deployable source plan: $deployable_plan_consumer"
+        violations=$((violations + 1))
+    fi
+done
 bin_deploy_owner="src/apm_cli/install/exec_gate.py"
 bin_deploy_definition_count=$(grep -Ec '^def plugin_bin_deployable\(' "$bin_deploy_owner" || true)
 bin_deploy_duplicate_hits=$(

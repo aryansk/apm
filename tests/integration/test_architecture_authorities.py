@@ -695,6 +695,17 @@ def test_deployable_source_paths_have_single_authorized_plan() -> None:
     assert "source_plan=source_plan" in services
     assert "source_plan.copy_ignore" in skills
     assert "Deployable source paths must route through DeployableSourcePlan" in guard
+    for integrator in (
+        "prompt_integrator.py",
+        "agent_integrator.py",
+        "command_integrator.py",
+        "instruction_integrator.py",
+        "hook_integrator.py",
+        "kiro_hook_integrator.py",
+        "canvas_integrator.py",
+    ):
+        content = (root / "src/apm_cli/integration" / integrator).read_text(encoding="utf-8")
+        assert "source_plan" in content
 
     def function_body(signature: str) -> str:
         return skills.split(signature, 1)[1].split("\n    def ", 1)[0]
@@ -774,7 +785,9 @@ def test_plugin_bin_eligibility_guard_rejects_parallel_owner(tmp_path: Path) -> 
     )
 
     assert result.returncode == 1
-    assert "Plugin bin deployment eligibility must route through install/exec_gate.py" in result.stdout
+    assert (
+        "Plugin bin deployment eligibility must route through install/exec_gate.py" in result.stdout
+    )
 
 
 @pytest.mark.parametrize(
