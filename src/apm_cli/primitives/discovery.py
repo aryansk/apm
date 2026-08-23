@@ -462,6 +462,10 @@ def _scan_patterns(
     """
     if not base_dir.exists():
         return
+    try:
+        base_dir = base_dir.resolve()
+    except OSError:
+        base_dir = base_dir.absolute()
 
     # Flatten all patterns into a single list for matching
     all_patterns: list[str] = []
@@ -481,7 +485,7 @@ def _scan_patterns(
         rel_path = file_path.relative_to(base_dir).as_posix()
         if not _matches_any_pattern(rel_path, all_patterns):
             continue
-        if file_path.is_file() and _is_readable(file_path):
+        if not file_path.is_symlink() and file_path.is_file() and _is_readable(file_path):
             try:
                 primitive = parse_primitive_file(file_path, source=source)
                 collection.add_primitive(primitive)

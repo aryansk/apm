@@ -133,6 +133,7 @@ class DistributedAgentsCompiler:
             deploy_inventory: Shared deploy-tree snapshot for orphan cleanup.
         """
         self.base_dir, self.source_dir = resolve_base_and_source_dirs(base_dir, source_dir)
+        self._exclude_patterns = exclude_patterns
         self._owns_source_inventory = source_inventory is None
         self._owns_deploy_inventory = deploy_inventory is None
         self._source_inventory = source_inventory
@@ -153,11 +154,13 @@ class DistributedAgentsCompiler:
     def _refresh_owned_inventories(self) -> None:
         """Refresh direct-construction snapshots at the start of a compile."""
         if self._owns_source_inventory:
-            self._source_inventory = CompileInventory.collect(self.source_dir)
+            self._source_inventory = CompileInventory.collect(
+                self.source_dir, exclude_patterns=self._exclude_patterns
+            )
         if self._owns_deploy_inventory:
             self._deploy_inventory = (
                 self._source_inventory
-                if self.base_dir == self.source_dir
+                if self.base_dir == self.source_dir and not self._exclude_patterns
                 else CompileInventory.collect(self.base_dir)
             )
         self.context_optimizer._inventory = self._source_inventory
@@ -165,9 +168,9 @@ class DistributedAgentsCompiler:
     def _deploy_inventory_for_cleanup(self) -> CompileInventory:
         """Return the deploy snapshot, collecting it lazily for direct callers."""
         if self._deploy_inventory is None:
-            if self.base_dir == self.source_dir:
+            if self.base_dir == self.source_dir and not self._exclude_patterns:
                 self._source_inventory = self._source_inventory or CompileInventory.collect(
-                    self.source_dir
+                    self.source_dir, exclude_patterns=self._exclude_patterns
                 )
                 self._deploy_inventory = self._source_inventory
             else:

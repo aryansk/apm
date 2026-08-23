@@ -57,7 +57,8 @@ def main() -> int:
         and _has_all(
             agents,
             (
-                "self._source_inventory = CompileInventory.collect(self.source_dir)",
+                "self._source_inventory = CompileInventory.collect(",
+                "self.source_dir, exclude_patterns=config.exclude",
                 "source_inventory=self._source_inventory",
                 "deploy_inventory=self._deploy_inventory",
             ),

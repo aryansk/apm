@@ -405,10 +405,12 @@ class AgentsCompiler:
         # Placement is valid only for this invocation's primitive snapshot.
         self._distributed_placement = None
         self._distributed_context_optimizer = None
-        self._source_inventory = CompileInventory.collect(self.source_dir)
+        self._source_inventory = CompileInventory.collect(
+            self.source_dir, exclude_patterns=config.exclude
+        )
         self._deploy_inventory = (
             self._source_inventory
-            if self.source_dir == self.base_dir
+            if self.source_dir == self.base_dir and not config.exclude
             else CompileInventory.collect(self.base_dir)
         )
 
