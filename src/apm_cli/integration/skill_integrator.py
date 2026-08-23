@@ -971,6 +971,7 @@ class SkillIntegrator(BaseIntegrator):
         logger=None,
         targets=None,
         skip_bin: bool = False,
+        source_plan=None,
     ) -> SkillIntegrationResult:
         """Copy a native Skill (with existing SKILL.md) to all active targets.
 
@@ -1147,6 +1148,7 @@ class SkillIntegrator(BaseIntegrator):
                 return list(
                     set(_base_ignore(directory, contents))  # noqa: B023
                     | set(_apm_filter(directory, contents))  # noqa: B023
+                    | set(source_plan.copy_ignore(directory, contents) if source_plan else ())
                 )
 
             shutil.copytree(package_path, target_skill_dir, ignore=_ignore_non_content_and_apm)
@@ -1335,6 +1337,7 @@ class SkillIntegrator(BaseIntegrator):
         skip_bin: bool = False,
         bin_skip_reason_override: str | None = None,
         trust_bin: bool | None = None,
+        source_plan=None,
     ) -> SkillIntegrationResult:
         """Integrate a package's skill into all active target directories.
 
@@ -1388,6 +1391,7 @@ class SkillIntegrator(BaseIntegrator):
                 targets=targets,
                 skill_subset=skill_subset,
                 skip_bin=skip_bin,
+                source_plan=source_plan,
             )
             return SkillIntegrationResult(
                 skill_created=False,

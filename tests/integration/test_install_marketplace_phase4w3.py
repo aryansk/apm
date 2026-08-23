@@ -25,6 +25,14 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from apm_cli.install.deployable_source_plan import DeployableSourcePlan
+
+
+def _security_plan(root: Path) -> DeployableSourcePlan:
+    """Return a minimal plan for mocked pre-deployment gate tests."""
+    return DeployableSourcePlan(root, frozenset())
+
+
 # ---------------------------------------------------------------------------
 # install/heals/buggy_lockfile_recovery -- integration-level coverage
 # ---------------------------------------------------------------------------
@@ -281,7 +289,7 @@ class TestPreDeploySecurityScan:
 
         with patch("apm_cli.security.gate.SecurityGate.scan_files", return_value=clean_verdict):
             result = _pre_deploy_security_scan(
-                tmp_path, DiagnosticCollector(), package_name="mypkg"
+                _security_plan(tmp_path), DiagnosticCollector(), package_name="mypkg"
             )
         assert result is True
 
@@ -300,7 +308,7 @@ class TestPreDeploySecurityScan:
             patch("apm_cli.security.gate.SecurityGate.report"),
         ):
             result = _pre_deploy_security_scan(
-                tmp_path,
+                _security_plan(tmp_path),
                 DiagnosticCollector(),
                 package_name="evil-pkg",
                 logger=mock_logger,
@@ -321,7 +329,9 @@ class TestPreDeploySecurityScan:
             patch("apm_cli.security.gate.SecurityGate.scan_files", return_value=blocking_verdict),
             patch("apm_cli.security.gate.SecurityGate.report"),
         ):
-            result = _pre_deploy_security_scan(tmp_path, DiagnosticCollector(), package_name="pkg")
+            result = _pre_deploy_security_scan(
+                _security_plan(tmp_path), DiagnosticCollector(), package_name="pkg"
+            )
         assert result is False
 
     def test_non_blocking_finding_returns_true(self, tmp_path: Path) -> None:
@@ -336,7 +346,9 @@ class TestPreDeploySecurityScan:
             patch("apm_cli.security.gate.SecurityGate.scan_files", return_value=warn_verdict),
             patch("apm_cli.security.gate.SecurityGate.report"),
         ):
-            result = _pre_deploy_security_scan(tmp_path, DiagnosticCollector(), package_name="pkg")
+            result = _pre_deploy_security_scan(
+                _security_plan(tmp_path), DiagnosticCollector(), package_name="pkg"
+            )
         assert result is True
 
     def test_force_flag_passed_to_gate(self, tmp_path: Path) -> None:
@@ -350,7 +362,7 @@ class TestPreDeploySecurityScan:
             "apm_cli.security.gate.SecurityGate.scan_files", return_value=clean_verdict
         ) as mock_scan:
             _pre_deploy_security_scan(
-                tmp_path, DiagnosticCollector(), package_name="pkg", force=True
+                _security_plan(tmp_path), DiagnosticCollector(), package_name="pkg", force=True
             )
         _, kwargs = mock_scan.call_args
         assert kwargs.get("force") is True

@@ -669,6 +669,59 @@ def test_policy_cache_metadata_redaction_has_single_owner() -> None:
     assert "Policy cache metadata must redact URL credentials at its canonical writer" in guard
 
 
+def test_deployable_source_paths_have_single_authorized_plan() -> None:
+    """Security scanning and skill materialization must share one source plan."""
+    root = Path(__file__).parents[2]
+    owner = (root / "src/apm_cli/install/deployable_source_plan.py").read_text(encoding="utf-8")
+    services = (root / "src/apm_cli/install/services.py").read_text(encoding="utf-8")
+    scanner = (root / "src/apm_cli/install/helpers/security_scan.py").read_text(encoding="utf-8")
+    skills = (root / "src/apm_cli/integration/skill_integrator.py").read_text(encoding="utf-8")
+    guard = (root / "scripts/lint-architecture-boundaries.sh").read_text(encoding="utf-8")
+
+    assert owner.count("class DeployableSourcePlan:") == 1
+    assert "source_plan = DeployableSourcePlan.create(" in services
+    assert "path_filter=source_plan.includes" in scanner
+    assert "source_plan=source_plan" in services
+    assert "source_plan.copy_ignore" in skills
+    assert "Deployable source paths must route through DeployableSourcePlan" in guard
+
+
+def test_deployable_source_plan_guard_rejects_parallel_classifier(tmp_path: Path) -> None:
+    """The boundary lint rejects a second deployable-path authority."""
+    root = Path(__file__).parents[2]
+    sandbox = tmp_path / "repo"
+    shutil.copytree(
+        root,
+        sandbox,
+        ignore=shutil.ignore_patterns(
+            ".git",
+            ".venv",
+            ".pytest_cache",
+            "__pycache__",
+            "build",
+            "dist",
+            "node_modules",
+        ),
+    )
+    duplicate = sandbox / "src/apm_cli/install/helpers/security_scan.py"
+    duplicate.write_text(
+        duplicate.read_text(encoding="utf-8") + "\n\nclass DeployableSourcePlan:\n    pass\n",
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        ("bash", "scripts/lint-architecture-boundaries.sh"),
+        cwd=sandbox,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=300,
+    )
+
+    assert result.returncode == 1
+    assert "Deployable source paths must route through DeployableSourcePlan" in result.stdout
+
+
 @pytest.mark.parametrize(
     ("guard", "replacement"),
     [

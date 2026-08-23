@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+from apm_cli.install.deployable_source_plan import DeployableSourcePlan
 from apm_cli.install.helpers.security_scan import _pre_deploy_security_scan
 from apm_cli.utils.diagnostics import DiagnosticCollector
 
@@ -30,6 +31,11 @@ _GATE_SCAN = "apm_cli.security.gate.SecurityGate.scan_files"
 _GATE_REPORT = "apm_cli.security.gate.SecurityGate.report"
 
 
+def _plan(root: Path) -> DeployableSourcePlan:
+    """Return a minimal authorized plan for a mocked security-gate call."""
+    return DeployableSourcePlan(root, frozenset())
+
+
 # ---------------------------------------------------------------------------
 # _pre_deploy_security_scan
 # ---------------------------------------------------------------------------
@@ -43,7 +49,7 @@ class TestPreDeploySecurityScan:
         diag = DiagnosticCollector()
 
         with patch(_GATE_SCAN, return_value=verdict):
-            result = _pre_deploy_security_scan(tmp_path, diag)
+            result = _pre_deploy_security_scan(_plan(tmp_path), diag)
 
         assert result is True
 
@@ -55,7 +61,7 @@ class TestPreDeploySecurityScan:
             patch(_GATE_SCAN, return_value=verdict),
             patch(_GATE_REPORT),
         ):
-            result = _pre_deploy_security_scan(tmp_path, diag, package_name="my-pkg")
+            result = _pre_deploy_security_scan(_plan(tmp_path), diag, package_name="my-pkg")
 
         assert result is False
 
@@ -67,7 +73,7 @@ class TestPreDeploySecurityScan:
             patch(_GATE_SCAN, return_value=verdict),
             patch(_GATE_REPORT),
         ):
-            result = _pre_deploy_security_scan(tmp_path, diag)
+            result = _pre_deploy_security_scan(_plan(tmp_path), diag)
 
         assert result is True
 
@@ -79,7 +85,7 @@ class TestPreDeploySecurityScan:
             patch(_GATE_SCAN, return_value=verdict),
             patch(_GATE_REPORT) as mock_report,
         ):
-            _pre_deploy_security_scan(tmp_path, diag, package_name="pkg", force=True)
+            _pre_deploy_security_scan(_plan(tmp_path), diag, package_name="pkg", force=True)
 
         mock_report.assert_called_once_with(verdict, diag, package="pkg", force=True)
 
@@ -92,7 +98,7 @@ class TestPreDeploySecurityScan:
             patch(_GATE_SCAN, return_value=verdict),
             patch(_GATE_REPORT),
         ):
-            _pre_deploy_security_scan(tmp_path, diag, package_name="my-pkg", logger=logger)
+            _pre_deploy_security_scan(_plan(tmp_path), diag, package_name="my-pkg", logger=logger)
 
         logger.error.assert_called_once()
         error_call = logger.error.call_args[0][0]
@@ -107,7 +113,7 @@ class TestPreDeploySecurityScan:
             patch(_GATE_SCAN, return_value=verdict),
             patch(_GATE_REPORT),
         ):
-            _pre_deploy_security_scan(tmp_path, diag, logger=logger)
+            _pre_deploy_security_scan(_plan(tmp_path), diag, logger=logger)
 
         assert logger.tree_item.call_count >= 2
 
@@ -120,7 +126,7 @@ class TestPreDeploySecurityScan:
             patch(_GATE_SCAN, return_value=verdict),
             patch(_GATE_REPORT),
         ):
-            result = _pre_deploy_security_scan(tmp_path, diag, logger=None)
+            result = _pre_deploy_security_scan(_plan(tmp_path), diag, logger=None)
 
         assert result is False
 
@@ -132,7 +138,7 @@ class TestPreDeploySecurityScan:
             patch(_GATE_SCAN, return_value=verdict) as mock_scan,
             patch(_GATE_REPORT) as mock_report,
         ):
-            _pre_deploy_security_scan(tmp_path, diag, force=True)
+            _pre_deploy_security_scan(_plan(tmp_path), diag, force=True)
 
         # scan_files called with force=True
         call_kwargs = mock_scan.call_args[1]
@@ -146,7 +152,7 @@ class TestPreDeploySecurityScan:
         diag = DiagnosticCollector()
 
         with patch(_GATE_SCAN, return_value=verdict) as mock_scan:
-            _pre_deploy_security_scan(tmp_path, diag)
+            _pre_deploy_security_scan(_plan(tmp_path), diag)
 
         call_kwargs = mock_scan.call_args[1]
         assert "policy" in call_kwargs

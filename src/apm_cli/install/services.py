@@ -370,6 +370,30 @@ def integrate_package_primitives(  # noqa: PLR0913
         _canvas_approved,
         _lsp_approved,
     ) = _check_executable_approval(package_name, package_info, allow_executables, ctx=ctx)
+    import sys
+
+    _skip_bin, _bin_skip_reason_override = _resolve_bin_skip(
+        _bin_approved, trust_bin, non_interactive=not sys.stdout.isatty()
+    )
+    from apm_cli.install.deployable_source_plan import DeployableSourcePlan
+    from apm_cli.install.helpers.security_scan import _pre_deploy_security_scan
+
+    source_plan = DeployableSourcePlan.create(
+        package_info,
+        targets,
+        skill_subset=skill_subset,
+        hooks_approved=_hooks_approved,
+        canvas_approved=_canvas_approved or is_first_party,
+        skip_bin=_skip_bin,
+    )
+    if not _pre_deploy_security_scan(
+        source_plan,
+        diagnostics,
+        package_name=package_name,
+        force=force,
+        logger=logger,
+    ):
+        return result
 
     from apm_cli.install.target_warnings import warn_unsupported_primitives
 
@@ -591,15 +615,6 @@ def integrate_package_primitives(  # noqa: PLR0913
             )
         _emit_integration_hints(_prim_name, _info, _log_integration)
 
-    # Determine effective bin/ skip and reason. The ``allowExecutables``
-    # gate and ``--trust-bin`` / ``--no-trust-bin`` are independent gates.
-    # In non-interactive contexts (piped output, CI) deny bin/ by default.
-    import sys
-
-    _skip_bin, _bin_skip_reason_override = _resolve_bin_skip(
-        _bin_approved, trust_bin, non_interactive=not sys.stdout.isatty()
-    )
-
     skill_result = integrators.skill.integrate_package_skill(
         package_info,
         project_root,
@@ -613,6 +628,7 @@ def integrate_package_primitives(  # noqa: PLR0913
         skip_bin=_skip_bin,
         bin_skip_reason_override=_bin_skip_reason_override,
         trust_bin=trust_bin,
+        source_plan=source_plan,
     )
     _skill_target_dirs: set = builtins.set()
     for tp in skill_result.target_paths:

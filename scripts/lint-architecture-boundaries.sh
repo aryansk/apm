@@ -246,6 +246,24 @@ check_pattern \
     $(find src/apm_cli -name '*.py' ! -path 'src/apm_cli/deps/lockfile.py')
 
 echo "[*] AC3: outcome and policy enforcement authorities"
+deployable_plan_owner="src/apm_cli/install/deployable_source_plan.py"
+deployable_plan_definition_count=$(grep -Ec '^class DeployableSourcePlan:' "$deployable_plan_owner" || true)
+deployable_plan_duplicate_hits=$(
+    grep -rEn --include='*.py' \
+        '^class DeployableSourcePlan:' \
+        src/apm_cli \
+        | grep -Fv "${deployable_plan_owner}:" \
+        || true
+)
+if [ "$deployable_plan_definition_count" -ne 1 ] \
+    || ! grep -q 'source_plan = DeployableSourcePlan.create(' src/apm_cli/install/services.py \
+    || ! grep -q 'path_filter=source_plan.includes' src/apm_cli/install/helpers/security_scan.py \
+    || ! grep -q 'source_plan=source_plan' src/apm_cli/install/services.py \
+    || [ -n "$deployable_plan_duplicate_hits" ]; then
+    echo "[x] Deployable source paths must route through DeployableSourcePlan"
+    [ -n "$deployable_plan_duplicate_hits" ] && echo "$deployable_plan_duplicate_hits"
+    violations=$((violations + 1))
+fi
 check_pattern \
     "Install adapters must not classify diagnostics" \
     'classify_post_install_result' \
