@@ -483,7 +483,31 @@ class TestGlobalOpenCodeScope:
     def test_opencode_skill_and_scoped_instruction_lifecycle(
         self, apm_binary_path, fake_home, opencode_package
     ):
-        """OpenCode uses native paths without taking ownership of other roots."""
+        """OpenCode preserves native project and user-scope ownership."""
+        project_root = fake_home.parent / "project"
+        project_root.mkdir()
+        (project_root / ".opencode").mkdir()
+        project_install = _run_apm(
+            apm_binary_path,
+            ["install", str(opencode_package), "--target", "opencode"],
+            project_root,
+            fake_home,
+        )
+        assert project_install.returncode == 0, project_install.stdout + project_install.stderr
+        project_skill = project_root / ".agents" / "skills" / "reviewer" / "SKILL.md"
+        assert project_skill.is_file()
+
+        project_compile = _run_apm(
+            apm_binary_path,
+            ["compile", "--target", "opencode"],
+            project_root,
+            fake_home,
+        )
+        assert project_compile.returncode == 0, project_compile.stdout + project_compile.stderr
+        project_agents = (project_root / "AGENTS.md").read_text(encoding="utf-8")
+        assert "GLOBAL_OPENCODE_MARKER" in project_agents
+        assert "SCOPED_OPENCODE_MARKER" in project_agents
+
         opencode_root = fake_home / ".config" / "opencode"
         opencode_root.mkdir(parents=True)
         claude_root = fake_home / ".claude"
@@ -515,8 +539,9 @@ class TestGlobalOpenCodeScope:
         assert "GLOBAL_OPENCODE_MARKER" in claude_agents
         assert "SCOPED_OPENCODE_MARKER" not in claude_agents
 
-        lock_path = fake_home / ".apm" / "apm.lock"
+        lock_path = fake_home / ".apm" / "apm.lock.yaml"
         first_lock = lock_path.read_bytes()
+        assert ".config/opencode/skills/reviewer/SKILL.md" in first_lock.decode("utf-8")
         first_agents = opencode_agents.encode("utf-8")
         repeat = _run_apm(apm_binary_path, ["compile", "--global"], fake_home, fake_home)
         assert repeat.returncode == 0, repeat.stdout + repeat.stderr
@@ -525,13 +550,16 @@ class TestGlobalOpenCodeScope:
 
         uninstall = _run_apm(
             apm_binary_path,
-            ["uninstall", "--global", "opencode-package"],
+            ["uninstall", "--global", str(opencode_package)],
             fake_home,
             fake_home,
         )
         assert uninstall.returncode == 0, uninstall.stdout + uninstall.stderr
         assert not native_skill.exists()
         assert foreign_skill.read_text(encoding="utf-8") == "# Foreign\n"
+        assert project_skill.is_file()
+        assert (project_root / "AGENTS.md").read_text(encoding="utf-8") == project_agents
+        assert (claude_root / "CLAUDE.md").read_text(encoding="utf-8") == claude_agents
 
 
 class TestGlobalUninstallLifecycle:
