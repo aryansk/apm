@@ -32,6 +32,14 @@ def test_apply_to_normalization_and_hidden_placement_have_canonical_owners() -> 
     assert "def _targeted_top_level_roots(" not in optimizer
     assert "self._placement_hidden_tool_trees" in optimizer
     assert "not self._is_supported_hidden_tool_root(path)" in optimizer
+    inventory = (root / "src/apm_cli/compilation/inventory.py").read_text(encoding="utf-8")
+    inventory_guard = (root / "scripts/check_compile_inventory_authority.py").read_text(
+        encoding="utf-8"
+    )
+    assert inventory.count("class CompileInventory") == 1
+    assert inventory.count("os.walk(") == 1
+    assert "os.walk(" not in optimizer
+    assert "Compile traversal must route through compilation/inventory.py" in inventory_guard
     assert "| applyTo normalization and hidden-tool placement |" in owner_table
     assert (
         "applyTo parsing must use utils/patterns.py and hidden placement ContextOptimizer" in guard
@@ -117,3 +125,39 @@ def test_apply_to_owner_guard_rejects_optimizer_local_prefix_parser(tmp_path: Pa
         "applyTo parsing must use utils/patterns.py and hidden placement ContextOptimizer"
         in result.stdout
     )
+
+
+def test_compile_inventory_guard_rejects_optimizer_walk(tmp_path: Path) -> None:
+    """The optimizer must not restore a private project traversal."""
+    root = Path(__file__).parents[2]
+    sandbox = tmp_path / "repo"
+    shutil.copytree(
+        root,
+        sandbox,
+        ignore=shutil.ignore_patterns(
+            ".git",
+            ".venv",
+            ".pytest_cache",
+            "__pycache__",
+            "build",
+            "dist",
+            "node_modules",
+        ),
+    )
+    optimizer = sandbox / "src/apm_cli/compilation/context_optimizer.py"
+    optimizer.write_text(
+        optimizer.read_text(encoding="utf-8") + "\n# os.walk(self.base_dir)\n",
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        ("python3", "scripts/check_compile_inventory_authority.py"),
+        cwd=sandbox,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=300,
+    )
+
+    assert result.returncode == 1
+    assert "Compile traversal must route through compilation/inventory.py" in result.stdout

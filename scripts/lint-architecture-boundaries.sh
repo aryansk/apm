@@ -195,20 +195,8 @@ if [ -n "$compiled_write_hits" ]; then
     violations=$((violations + 1))
 fi
 distributed_compiler="src/apm_cli/compilation/distributed_compiler.py"
-nested_worktree_walk_count=$(grep -Fc \
-    'for directory, child_dirs, files in os.walk(self.base_dir, followlinks=False):' \
-    "$distributed_compiler" || true)
-nested_worktree_boundary_count=$(grep -Fc \
-    '(directory_path / ".git").is_file()' \
-    "$distributed_compiler" || true)
-nested_worktree_prune_count=$(grep -Fc 'child_dirs.clear()' "$distributed_compiler" || true)
-nested_worktree_rglob_hits=$(grep -En 'rglob\("AGENTS\.md"\)' "$distributed_compiler" || true)
-if [ "$nested_worktree_walk_count" -ne 1 ] \
-    || [ "$nested_worktree_boundary_count" -ne 1 ] \
-    || [ "$nested_worktree_prune_count" -ne 1 ] \
-    || [ -n "$nested_worktree_rglob_hits" ]; then
-    echo "[x] Nested worktree cleanup must prune .git-file roots"
-    [ -n "$nested_worktree_rglob_hits" ] && echo "$nested_worktree_rglob_hits"
+if ! python3 scripts/check_compile_inventory_authority.py; then
+    echo "[x] Compile traversal must use the shared inventory"
     violations=$((violations + 1))
 fi
 agents_source_attribution_output=$(python3 scripts/check_agents_source_attribution_owner.py \

@@ -40,6 +40,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   every OS. Existing Windows lockfiles may retain the old CRLF-domain hash;
   keep the lockfile so its `resolved_commit` pins remain intact while the
   automatic one-time repair tracked in #2628 lands. (closes #2619)
+- `apm compile` now shares one project inventory across discovery, placement,
+  and cleanup, limiting literal `applyTo` patterns to relevant candidate files
+  without changing generated output. (#2595)
 - Hook commands such as `"${CLAUDE_PLUGIN_ROOT}"/hooks/probe.py` now rewrite to
   `"${CLAUDE_PLUGIN_ROOT}/hooks/probe.py"` and warn when a supported plugin-root
   placeholder remains unresolved instead of silently deploying a dead hook.

@@ -142,6 +142,7 @@ class TestLiteralApplyToTopLevelRoots:
             ["/src/**/*.py"],
             ["../src/**/*.py"],
             [r"src\**\*.py"],
+            [r"src/foo\,bar/**/*.py"],
         ]
 
         for patterns in unprovable:

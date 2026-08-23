@@ -223,7 +223,12 @@ def literal_apply_to_top_level_roots(
     roots: set[str] = set()
 
     for apply_to in apply_to_values:
-        if not apply_to or not apply_to.strip() or not _has_balanced_glob_groups(apply_to):
+        if (
+            not apply_to
+            or not apply_to.strip()
+            or _APPLY_TO_ESCAPE in apply_to
+            or not _has_balanced_glob_groups(apply_to)
+        ):
             return None
 
         patterns = parse_apply_to(apply_to)
