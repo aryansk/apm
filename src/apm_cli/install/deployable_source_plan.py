@@ -16,21 +16,22 @@ from typing import Any
 
 from apm_cli.install.cache_pin import MARKER_FILENAME
 from apm_cli.models.dependency.subsets import skill_subset_filter_tokens
-from apm_cli.utils.path_security import PathTraversalError, ensure_path_within_resolved
+from apm_cli.utils.path_security import (
+    PathTraversalError,
+    ensure_path_within_resolved,
+    has_symlink_component,
+)
 from apm_cli.utils.paths import portable_relpath
 
 
 def _is_safe_source_path(path: Path, source_root: Path) -> bool:
     """Return whether a source candidate stays in the real package tree."""
     try:
-        relative = path.relative_to(source_root)
+        path.relative_to(source_root)
     except ValueError:
         return False
-    current = source_root
-    for part in relative.parts:
-        current /= part
-        if current.is_symlink():
-            return False
+    if has_symlink_component(source_root, path):
+        return False
     try:
         ensure_path_within_resolved(path, source_root)
     except (OSError, PathTraversalError, RuntimeError):

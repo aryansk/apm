@@ -221,4 +221,10 @@ def log_bin_status(
             f"Run 'apm approve {_pkg_label}' to approve."
         )
     elif skill_result.bin_skipped_reason == "not_trusted":
-        log_fn("  |-- bin/ executables skipped (--no-trust-bin). Pass --trust-bin to deploy.")
+        from apm_cli.utils.diagnostics import printable_ascii_text
+
+        _pkg_label = printable_ascii_text(package_name or getattr(package_info, "name", "unknown"))
+        log_fn(
+            "  |-- bin/ executables skipped (not trusted). "
+            f"Run 'apm install --trust-bin {_pkg_label}' to deploy."
+        )

@@ -13,7 +13,12 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
 
-from ..utils.path_security import PathTraversalError, ensure_path_within, validate_path_segments
+from ..utils.path_security import (
+    PathTraversalError,
+    ensure_path_within,
+    has_symlink_component,
+    validate_path_segments,
+)
 from ..utils.paths import portable_relpath
 from .content_scanner import ContentScanner, ScanFinding
 
@@ -303,11 +308,8 @@ def _explicit_scan_candidate(root: Path, relative: str) -> Path:
         raise PathTraversalError(f"Explicit scan path must be root-relative: {relative!r}")
     validate_path_segments(relative, context="explicit scan path", reject_empty=True)
     candidate = root / path
-    current = root
-    for part in path.parts:
-        current /= part
-        if current.is_symlink():
-            raise PathTraversalError(f"Explicit scan path contains a symlink: {relative!r}")
+    if has_symlink_component(root, candidate):
+        raise PathTraversalError(f"Explicit scan path contains a symlink: {relative!r}")
     ensure_path_within(candidate, root)
     return candidate
 

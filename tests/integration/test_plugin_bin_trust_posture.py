@@ -227,7 +227,9 @@ def test_log_bin_status_not_trusted() -> None:
 
     log_bin_status(skill_result, "", "pkg", SimpleNamespace(name="pkg"), lines.append)
 
-    assert lines == ["  |-- bin/ executables skipped (--no-trust-bin). Pass --trust-bin to deploy."]
+    assert lines == [
+        "  |-- bin/ executables skipped (not trusted). Run 'apm install --trust-bin pkg' to deploy."
+    ]
 
 
 @pytest.mark.parametrize(

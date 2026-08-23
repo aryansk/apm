@@ -51,6 +51,7 @@ semicolon-delimited, and specific to the file(s) that own the fact.
 | Install success / failure outcome | the canonical install-outcome path | `src/apm_cli/install/outcome.py` |
 | Frozen install mutation eligibility | install/service.py (InstallService) | `src/apm_cli/install/service.py` |
 | Authorized deployable source paths | install/deployable_source_plan.py (DeployableSourcePlan) | `src/apm_cli/install/deployable_source_plan.py` |
+| Symlink-component containment | utils/path_security.py (has_symlink_component) | `src/apm_cli/utils/path_security.py` |
 | Install invocation option defaults | install/request.py (InstallRequest) | `src/apm_cli/install/request.py`; `src/apm_cli/commands/install.py` |
 | Neutral hook source grammar and shape -> per-target native | hook_contract.py (HOOK_COMMAND_KEYS, parse_hook_source, _entries_to_ir) + per-target renderers | `src/apm_cli/hook_contract.py`; `src/apm_cli/integration/hook_ir.py`; `src/apm_cli/integration/hook_native_formats.py`; `src/apm_cli/integration/hook_integrator.py`; `src/apm_cli/integration/hook_ownership.py` |
 | Plugin-root hook command vocabulary + parsing | integration/hook_command_paths.py | `src/apm_cli/integration/hook_command_paths.py` |

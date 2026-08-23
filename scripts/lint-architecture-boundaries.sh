@@ -272,6 +272,23 @@ if [ "$deployable_plan_definition_count" -ne 1 ] \
     [ -n "$deployable_plan_duplicate_hits" ] && echo "$deployable_plan_duplicate_hits"
     violations=$((violations + 1))
 fi
+symlink_component_owner="src/apm_cli/utils/path_security.py"
+symlink_component_definition_count=$(
+    grep -Ec '^def has_symlink_component\(' "$symlink_component_owner" || true
+)
+symlink_component_duplicate_hits=$(
+    grep -rEn --include='*.py' \
+        '^def has_symlink_component\(' \
+        src/apm_cli \
+        | grep -Fv "${symlink_component_owner}:" \
+        || true
+)
+if [ "$symlink_component_definition_count" -ne 1 ] \
+    || [ -n "$symlink_component_duplicate_hits" ]; then
+    echo "[x] Symlink-component containment must route through utils/path_security.py"
+    [ -n "$symlink_component_duplicate_hits" ] && echo "$symlink_component_duplicate_hits"
+    violations=$((violations + 1))
+fi
 deployable_plan_consumers=(
     src/apm_cli/integration/prompt_integrator.py
     src/apm_cli/integration/agent_integrator.py

@@ -156,11 +156,11 @@ During `apm install`, APM resolves the authorized targets, selected skill subset
 download -> authorize deploy set -> scan selected files -> block or deploy -> report
 ```
 
-- **Critical findings block deployment.** Nothing reaches agent-readable directories. A failed transaction may remove its fetched checkout during cleanup.
+- **Critical findings block deployment.** Nothing reaches agent-readable directories. The package remains cached in `apm_modules/owner/package/` so you can inspect and fix the reported files.
 - **Warnings are non-blocking.** Zero-width characters are flagged in the diagnostics summary. Files are deployed normally.
 - **`--force` overrides the block.** Consistent with existing collision semantics — an explicit "I know what I'm doing."
 - **Multi-package installs continue.** A blocked package doesn't stop other packages from installing. After all packages are processed, `apm install` exits with code 1 if any package was blocked — failing the CI step.
-- **Removal reconciliation uses the same gate.** When `apm uninstall` or `apm prune` rebuilds surviving package integrations, a hostile survivor is left undeployed and the command warns. Fix the reported package source, then run `apm install` to rebuild its files.
+- **Removal reconciliation uses the same gate.** During `apm uninstall`, each surviving package is scanned before its integrations are rebuilt; a hostile survivor is skipped and the command warns. During `apm prune`, a hostile hook survivor aborts hook reconciliation before cleanup, leaving the prior hook state in place and warning that reconciliation failed. Fix the reported package source, then run `apm install` to rebuild its files.
 
 ### Compile and pack scanning
 

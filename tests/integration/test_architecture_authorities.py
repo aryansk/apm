@@ -690,12 +690,21 @@ def test_deployable_source_paths_have_single_authorized_plan() -> None:
     services = (root / "src/apm_cli/install/services.py").read_text(encoding="utf-8")
     scanner = (root / "src/apm_cli/install/helpers/security_scan.py").read_text(encoding="utf-8")
     skills = (root / "src/apm_cli/integration/skill_integrator.py").read_text(encoding="utf-8")
+    path_security = (root / "src/apm_cli/utils/path_security.py").read_text(encoding="utf-8")
+    security_gate = (root / "src/apm_cli/security/gate.py").read_text(encoding="utf-8")
+    hook_ownership = (root / "src/apm_cli/integration/hook_ownership.py").read_text(
+        encoding="utf-8"
+    )
     guard = (root / "scripts/lint-architecture-boundaries.sh").read_text(encoding="utf-8")
 
     assert owner.count("class DeployableSourcePlan:") == 1
     assert "source_plan = DeployableSourcePlan.create(" in services
     assert "source_plan.scan_security(" in scanner
     assert "paths=self.paths" in owner
+    assert path_security.count("def has_symlink_component(") == 1
+    assert "has_symlink_component(source_root, path)" in owner
+    assert "has_symlink_component(root, candidate)" in security_gate
+    assert "has_symlink_component(apm_modules, package_path)" in hook_ownership
     assert "source_plan=source_plan" in services
     assert "source_plan.copy_ignore" in skills
     assert "from apm_cli.install.exec_gate import plugin_bin_deployable" in skills

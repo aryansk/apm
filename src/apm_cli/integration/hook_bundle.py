@@ -152,10 +152,14 @@ def copy_deployed_hook_bundle(
     CommonJS.
     """
     result = HookBundleCopyResult()
+    package_path = package_path.resolve()
+    if hook_file_dir is not None:
+        hook_file_dir = hook_file_dir.resolve()
+    selected_bundle_files = frozenset(path.resolve() for path in selected_bundle_files)
     source_target_roots: dict[tuple[Path, Path], str] = {}
     root_has_js_hook: dict[tuple[Path, Path], bool] = {}
     command_target_rels = {target_rel for _source_file, target_rel in scripts}
-    descriptor_files = hook_descriptor_files or set()
+    descriptor_files = {path.resolve() for path in hook_descriptor_files or set()}
 
     for source_file, target_rel in scripts:
         target_script = project_root / target_rel
