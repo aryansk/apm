@@ -45,6 +45,7 @@ Script path handling:
 import json
 import logging
 import re
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, TypedDict
@@ -141,6 +142,31 @@ class HookTargetReconcileStats(TypedDict):
     errors: int
     failed_targets: list[str]
     failed_paths: list[str]
+
+
+@dataclass(frozen=True)
+class HookSourceSelection:
+    """Authorized hook descriptors and bundle assets grouped by target."""
+
+    descriptor_files: dict[str, frozenset[Path]]
+    bundle_files: dict[str, frozenset[Path]]
+
+    def descriptors_for(self, target_name: str) -> list[Path]:
+        """Return target-routed descriptors in stable path order."""
+        return sorted(self.descriptor_files.get(target_name, frozenset()))
+
+    def bundle_for(self, target_name: str) -> frozenset[Path]:
+        """Return target-materialized bundle assets."""
+        return self.bundle_files.get(target_name, frozenset())
+
+    @property
+    def files(self) -> frozenset[Path]:
+        """Return the multi-target union of every selected source file."""
+        return frozenset(
+            path
+            for selected in (*self.descriptor_files.values(), *self.bundle_files.values())
+            for path in selected
+        )
 
 
 @dataclass(frozen=True)
@@ -535,29 +561,96 @@ class HookIntegrator(BaseIntegrator):
         package_path: Path,
         hook_files: list[Path],
     ) -> list[Path]:
-        """Return files copied with scripts referenced by approved hook descriptors."""
-        integrator = cls()
-        deployable_files = set(hook_files)
-        descriptor_files = set(hook_files)
+        """Return the legacy Claude-compatible projection of the shared selector."""
+        selection = cls.select_deployable_hook_sources(
+            package_path,
+            ("claude",),
+            hook_files=hook_files,
+        )
+        return sorted(selection.files)
 
-        for hook_file in hook_files:
-            data = integrator._parse_hook_json(hook_file)
-            if data is None:
+    @classmethod
+    def select_deployable_hook_sources(
+        cls,
+        package_path: Path,
+        target_names: Iterable[str],
+        *,
+        package_name: str = "",
+        package_identity: str = "",
+        warned_packages: set[str] | None = None,
+        hook_files: list[Path] | None = None,
+    ) -> HookSourceSelection:
+        """Select hook inputs that each resolved target will materialize.
+
+        This is the sole hook source-selection algorithm.  It applies
+        filename routing before discovering referenced script bundles, excludes
+        Copilot's recursively-scanned JSON assets, and enumerates each source
+        root once per target.
+        """
+        integrator = cls()
+        discovered_files = (
+            hook_files if hook_files is not None else integrator.find_hook_files(package_path)
+        )
+        all_descriptors = set(discovered_files)
+        descriptors_by_target: dict[str, frozenset[Path]] = {}
+        bundles_by_target: dict[str, frozenset[Path]] = {}
+        supported_targets = {"copilot", "kiro", *_MERGE_HOOK_TARGETS}
+
+        for target_name in dict.fromkeys(target_names):
+            if target_name not in supported_targets:
                 continue
-            source_files = integrator._referenced_hook_source_files(
-                data,
-                package_path,
-                hook_file.parent,
+            descriptors = _filter_hook_files_for_target(
+                discovered_files,
+                target_name,
+                package_name=package_name,
+                package_identity=package_identity,
+                warned_packages=warned_packages,
             )
-            for source_file in source_files:
-                source_root = _hook_source_root(package_path, hook_file.parent, source_file)
-                deployable_files.update(
+            descriptors_by_target[target_name] = frozenset(descriptors)
+            source_roots: set[Path] = set()
+            for hook_file in descriptors:
+                data = integrator._parse_hook_json(hook_file)
+                if data is None:
+                    continue
+                for source_file in integrator._referenced_hook_source_files(
+                    data,
+                    package_path,
+                    hook_file.parent,
+                ):
+                    source_roots.add(_hook_source_root(package_path, hook_file.parent, source_file))
+
+            bundle_files: set[Path] = set()
+            for source_root in sorted(source_roots):
+                bundle_files.update(
                     iter_deployable_hook_bundle_files(
                         source_root,
-                        descriptor_files=descriptor_files,
+                        descriptor_files=all_descriptors,
+                        exclude_json_files=target_name == "copilot",
                     )
                 )
-        return sorted(deployable_files)
+            bundles_by_target[target_name] = frozenset(bundle_files)
+
+        return HookSourceSelection(descriptors_by_target, bundles_by_target)
+
+    def select_hook_sources_for_target(
+        self,
+        package_info,
+        target_name: str,
+        *,
+        source_plan=None,
+    ) -> HookSourceSelection:
+        """Read the plan's selection or build the same selection for direct use."""
+        selection = getattr(source_plan, "hook_source_selection", None)
+        if selection is not None:
+            return selection
+        package_name = self._get_package_name(package_info, None)
+        return self.select_deployable_hook_sources(
+            package_info.install_path,
+            (target_name,),
+            package_name=package_name,
+            package_identity=package_info.get_canonical_dependency_string(),
+            warned_packages=self._deprecated_hook_routing_warnings,
+        )
 
     @staticmethod
     def _referenced_hook_source_files(
@@ -1088,21 +1181,13 @@ class HookIntegrator(BaseIntegrator):
         Returns:
             HookIntegrationResult: Results of the integration operation
         """
-        hook_files = self.find_hook_files(package_info.install_path, source_plan)
         package_name = self._get_package_name(package_info, project_root)
-        # Per-file target routing always runs.  A dep-level ``targets:`` list
-        # restricts WHICH targets are active (upstream in services.py); it must
-        # not disable per-file routing here, or divergent per-target files
-        # (e.g. ``pkg-claude-hooks.json`` vs ``pkg-codex-hooks.json``) would all
-        # merge into every active target -- cross-contaminating configs and
-        # duplicating shared entries (microsoft/apm#2020 regression class).
-        hook_files = _filter_hook_files_for_target(
-            hook_files,
+        hook_sources = self.select_hook_sources_for_target(
+            package_info,
             "copilot",
-            package_name=package_name,
-            warned_packages=self._deprecated_hook_routing_warnings,
-            package_identity=package_info.get_canonical_dependency_string(),
+            source_plan=source_plan,
         )
+        hook_files = hook_sources.descriptors_for("copilot")
 
         if not hook_files:
             return HookIntegrationResult(
@@ -1247,6 +1332,7 @@ class HookIntegrator(BaseIntegrator):
                 hook_descriptor_files=set(hook_files),
                 exclude_json_files=True,
                 source_plan=source_plan,
+                selected_bundle_files=hook_sources.bundle_for("copilot"),
             )
             scripts_copied += copy_result.scripts_copied
             scripts_adopted += copy_result.files_adopted
@@ -1302,18 +1388,13 @@ class HookIntegrator(BaseIntegrator):
 
         _deploy_root_for_rewrite = self._deploy_root_for_hook_rewrite(project_root, user_scope)
 
-        hook_files = self.find_hook_files(package_info.install_path, source_plan)
         package_name = self._get_package_name(package_info, project_root)
-        # Per-file target routing always runs; a dep-level ``targets:`` list
-        # narrows the active target set upstream but must not disable per-file
-        # routing (see integrate_package_hooks for the full rationale).
-        hook_files = _filter_hook_files_for_target(
-            hook_files,
+        hook_sources = self.select_hook_sources_for_target(
+            package_info,
             config.target_key,
-            package_name=package_name,
-            warned_packages=self._deprecated_hook_routing_warnings,
-            package_identity=package_info.get_canonical_dependency_string(),
+            source_plan=source_plan,
         )
+        hook_files = hook_sources.descriptors_for(config.target_key)
         if not hook_files:
             return _empty
 
@@ -1597,6 +1678,7 @@ class HookIntegrator(BaseIntegrator):
                 target_paths=target_paths,
                 hook_descriptor_files=set(hook_files),
                 source_plan=source_plan,
+                selected_bundle_files=hook_sources.bundle_for(config.target_key),
             )
             scripts_copied += copy_result.scripts_copied
             scripts_adopted += copy_result.files_adopted

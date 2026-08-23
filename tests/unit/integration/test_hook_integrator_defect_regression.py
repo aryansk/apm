@@ -6,6 +6,7 @@ import json
 import logging
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import patch
 
 import pytest
 
@@ -17,6 +18,7 @@ from apm_cli.integration.hook_ownership import dependency_hook_source_marker
 from apm_cli.integration.targets import KNOWN_TARGETS
 from apm_cli.models.apm_package import APMPackage, PackageInfo
 from apm_cli.models.dependency.reference import DependencyReference
+from apm_cli.security.gate import SecurityGate
 
 
 def _package_info(package_path: Path, name: str = "superpowers") -> PackageInfo:
@@ -159,6 +161,82 @@ def test_source_plan_deploys_referenced_hook_bundle_for_copilot_and_kiro(tmp_pat
 
     assert (project / ".github" / "hooks" / "scripts" / "superpowers" / "run.sh").is_file()
     assert (project / ".kiro" / "hooks" / "superpowers" / "run.sh").is_file()
+
+
+def test_copilot_plan_excludes_nested_json_bundle_asset(tmp_path: Path) -> None:
+    """Copilot neither scans nor deploys JSON assets its hook loader would parse."""
+    project = tmp_path / "project"
+    package_path = tmp_path / "superpowers"
+    hooks_dir = package_path / ".apm" / "hooks"
+    (hooks_dir / "nested").mkdir(parents=True)
+    (hooks_dir / "run.sh").write_text("#!/bin/sh\necho ok\n", encoding="utf-8")
+    (hooks_dir / "nested" / "hostile.json").write_text('{"payload":"\u202e"}', encoding="utf-8")
+    (hooks_dir / "hooks.json").write_text(
+        json.dumps(_session_start_hook("./run.sh")),
+        encoding="utf-8",
+    )
+    package_info = _package_info(package_path)
+    copilot_plan = DeployableSourcePlan.create(
+        SimpleNamespace(install_path=package_path),
+        [KNOWN_TARGETS["copilot"]],
+        skill_subset=None,
+        hooks_approved=True,
+        canvas_approved=False,
+        skip_bin=True,
+    )
+
+    assert copilot_plan.paths == frozenset({".apm/hooks/hooks.json", ".apm/hooks/run.sh"})
+    assert not SecurityGate.scan_files(package_path, paths=copilot_plan.paths).should_block
+    HookIntegrator().integrate_hooks_for_target(
+        KNOWN_TARGETS["copilot"],
+        package_info,
+        project,
+        source_plan=copilot_plan,
+    )
+    assert not (
+        project / ".github" / "hooks" / "scripts" / "superpowers" / "nested" / "hostile.json"
+    ).exists()
+
+    claude_plan = DeployableSourcePlan.create(
+        SimpleNamespace(install_path=package_path),
+        [KNOWN_TARGETS["claude"]],
+        skill_subset=None,
+        hooks_approved=True,
+        canvas_approved=False,
+        skip_bin=True,
+    )
+    assert ".apm/hooks/nested/hostile.json" in claude_plan.paths
+    HookIntegrator().integrate_hooks_for_target(
+        KNOWN_TARGETS["claude"],
+        package_info,
+        project,
+        source_plan=claude_plan,
+    )
+    assert (project / ".claude" / "hooks" / "superpowers" / "nested" / "hostile.json").is_file()
+
+
+def test_hook_source_selector_enumerates_shared_root_once_per_target(tmp_path: Path) -> None:
+    """Bundle enumeration is deduplicated by source root before recursive walking."""
+    package_path = tmp_path / "superpowers"
+    hooks_dir = package_path / ".apm" / "hooks"
+    hooks_dir.mkdir(parents=True)
+    (hooks_dir / "run.sh").write_text("#!/bin/sh\necho ok\n", encoding="utf-8")
+    for descriptor_name in ("hooks.json", "extra.json"):
+        (hooks_dir / descriptor_name).write_text(
+            json.dumps(_session_start_hook("./run.sh")),
+            encoding="utf-8",
+        )
+
+    with patch.object(
+        hook_integrator_module,
+        "iter_deployable_hook_bundle_files",
+        wraps=hook_integrator_module.iter_deployable_hook_bundle_files,
+    ) as enumerate_bundle:
+        selection = HookIntegrator.select_deployable_hook_sources(package_path, ("claude",))
+
+    assert selection.bundle_for("claude") == frozenset({hooks_dir / "run.sh"})
+    assert enumerate_bundle.call_count == 1
+    assert enumerate_bundle.call_args.args[0] == hooks_dir
 
 
 def test_copilot_renames_claude_tool_events_to_camel_case(tmp_path: Path, caplog, capsys) -> None:

@@ -262,10 +262,12 @@ if [ "$deployable_plan_definition_count" -ne 1 ] \
     || ! grep -q 'integrate_package_primitives(' src/apm_cli/commands/uninstall/engine.py \
     || grep -q 'integrate_package_skill(' src/apm_cli/commands/uninstall/engine.py \
     || ! grep -q 'source_plan = DeployableSourcePlan.create(' src/apm_cli/integration/skill_integrator.py \
-    || ! grep -q 'HookIntegrator.find_deployable_hook_bundle_files' "$deployable_plan_owner" \
+    || ! grep -q 'HookIntegrator.select_deployable_hook_sources' "$deployable_plan_owner" \
+    || ! grep -q 'selected_bundle_files=hook_sources.bundle_for' src/apm_cli/integration/hook_integrator.py \
+    || ! grep -q 'selected_bundle_files=selected_bundle_files' src/apm_cli/integration/kiro_hook_integrator.py \
     || ! grep -q 'CanvasIntegrator.find_canvas_bundles' "$deployable_plan_owner" \
     || [ -n "$deployable_plan_duplicate_hits" ]; then
-    echo "[x] Deployable source paths must route through DeployableSourcePlan and its gate"
+    echo "[x] Deployable hook paths must route through the shared target-aware source selector"
     [ -n "$deployable_plan_duplicate_hits" ] && echo "$deployable_plan_duplicate_hits"
     violations=$((violations + 1))
 fi

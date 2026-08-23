@@ -137,6 +137,7 @@ def copy_deployed_hook_bundle(
     hook_descriptor_files: set[Path] | None = None,
     exclude_json_files: bool = False,
     source_plan=None,
+    selected_bundle_files: frozenset[Path],
 ) -> HookBundleCopyResult:
     """Copy each referenced script's whole hooks root and module type.
 
@@ -171,11 +172,9 @@ def copy_deployed_hook_bundle(
 
     copy_plan: dict[str, Path] = {}
     for source_root, target_root in source_target_roots:
-        for source_file in iter_deployable_hook_bundle_files(
-            source_root,
-            descriptor_files=descriptor_files,
-            exclude_json_files=exclude_json_files,
-        ):
+        for source_file in selected_bundle_files:
+            if source_file in descriptor_files or not source_file.is_relative_to(source_root):
+                continue
             if source_plan is not None and not source_plan.includes(
                 portable_relpath(source_file, source_plan.source_root)
             ):

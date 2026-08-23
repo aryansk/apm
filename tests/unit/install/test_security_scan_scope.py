@@ -32,7 +32,10 @@ def _skill_target() -> SimpleNamespace:
 
 
 def _primitive_target(primitive: str) -> SimpleNamespace:
-    return SimpleNamespace(primitives={primitive: object()})
+    values = {"primitives": {primitive: object()}}
+    if primitive == "hooks":
+        values["name"] = "claude"
+    return SimpleNamespace(**values)
 
 
 @pytest.mark.parametrize(
@@ -94,6 +97,39 @@ def test_source_only_hidden_character_is_not_in_authorized_scan(tmp_path: Path) 
     assert verdict.should_block is False
     assert verdict.scanned_files == frozenset({"skills/clean/SKILL.md"})
     assert _pre_deploy_security_scan(plan, DiagnosticCollector(), package_name="clean") is True
+
+
+def test_hook_plan_routes_descriptors_before_scanning(tmp_path: Path) -> None:
+    """Copilot cannot scan a hostile Claude-only descriptor or its script."""
+    hooks_dir = tmp_path / ".apm" / "hooks"
+    hooks_dir.mkdir(parents=True)
+    (hooks_dir / "hooks-claude.json").write_text(
+        '{"hooks":{"SessionStart":[{"hooks":[{"command":"./claude.sh"}]}]},"note":"\u202e"}',
+        encoding="utf-8",
+    )
+    (hooks_dir / "claude.sh").write_text("#!/bin/sh\n# \u202e\n", encoding="utf-8")
+
+    copilot_plan = DeployableSourcePlan.create(
+        _package(tmp_path),
+        [KNOWN_TARGETS["copilot"]],
+        skill_subset=None,
+        hooks_approved=True,
+        canvas_approved=False,
+        skip_bin=True,
+    )
+    claude_plan = DeployableSourcePlan.create(
+        _package(tmp_path),
+        [KNOWN_TARGETS["claude"]],
+        skill_subset=None,
+        hooks_approved=True,
+        canvas_approved=False,
+        skip_bin=True,
+    )
+
+    assert copilot_plan.paths == frozenset()
+    assert SecurityGate.scan_files(tmp_path, paths=copilot_plan.paths).should_block is False
+    assert claude_plan.paths == frozenset({".apm/hooks/hooks-claude.json", ".apm/hooks/claude.sh"})
+    assert SecurityGate.scan_files(tmp_path, paths=claude_plan.paths).should_block is True
 
 
 def test_source_only_canvas_content_is_not_authorized_for_scan(tmp_path: Path) -> None:

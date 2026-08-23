@@ -45,11 +45,11 @@ def _pre_deploy_security_scan(
             logger.error(
                 f"  Blocked: {package_name or 'package'} contains critical hidden character(s)"
             )
-            logger.error(
+            logger.error_detail(
                 f"  |-- Inspect source now: {printable_ascii_text(str(source_plan.source_root))} "
                 "(cleanup may remove it after this failure)"
             )
-            logger.error("  |-- Use --force to deploy anyway")
+            logger.error_detail("  |-- Use --force to deploy anyway")
         return False
 
     return True

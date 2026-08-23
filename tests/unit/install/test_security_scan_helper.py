@@ -100,7 +100,7 @@ class TestPreDeploySecurityScan:
         ):
             _pre_deploy_security_scan(_plan(tmp_path), diag, package_name="my-pkg", logger=logger)
 
-        assert logger.error.call_count == 3
+        assert logger.error.call_count == 1
         error_call = logger.error.call_args_list[0].args[0]
         assert "my-pkg" in error_call or "Blocked" in error_call
 
@@ -116,8 +116,9 @@ class TestPreDeploySecurityScan:
             _pre_deploy_security_scan(_plan(tmp_path), diag, logger=logger)
 
         assert logger.tree_item.call_count == 0
-        assert logger.error.call_count == 3
-        messages = [call.args[0] for call in logger.error.call_args_list]
+        assert logger.error.call_count == 1
+        assert logger.error_detail.call_count == 2
+        messages = [call.args[0] for call in logger.error_detail.call_args_list]
         assert any("Inspect source now" in message for message in messages)
         assert any("Use --force" in message for message in messages)
 

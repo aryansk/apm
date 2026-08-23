@@ -61,7 +61,9 @@ def test_uninstall_reintegration_routes_through_the_deployable_source_plan() -> 
 
     assert "integrate_package_primitives(" in engine
     assert "integrate_package_skill(" not in engine
-    assert "Deployable source paths must route through DeployableSourcePlan and its gate" in guard
+    assert (
+        "Deployable hook paths must route through the shared target-aware source selector" in guard
+    )
 
 
 @pytest.mark.parametrize(
@@ -694,9 +696,17 @@ def test_deployable_source_paths_have_single_authorized_plan() -> None:
     assert "paths=source_plan.paths" in scanner
     assert "source_plan=source_plan" in services
     assert "source_plan.copy_ignore" in skills
-    assert "HookIntegrator.find_deployable_hook_bundle_files" in owner
+    assert "HookIntegrator.select_deployable_hook_sources" in owner
     assert "CanvasIntegrator.find_canvas_bundles" in owner
-    assert "Deployable source paths must route through DeployableSourcePlan" in guard
+    assert (
+        "Deployable hook paths must route through the shared target-aware source selector" in guard
+    )
+    hooks = (root / "src/apm_cli/integration/hook_integrator.py").read_text(encoding="utf-8")
+    kiro_hooks = (root / "src/apm_cli/integration/kiro_hook_integrator.py").read_text(
+        encoding="utf-8"
+    )
+    assert "selected_bundle_files=hook_sources.bundle_for" in hooks
+    assert "selected_bundle_files=selected_bundle_files" in kiro_hooks
     for integrator in (
         "prompt_integrator.py",
         "agent_integrator.py",
@@ -750,7 +760,9 @@ def test_deployable_source_plan_guard_rejects_parallel_classifier(tmp_path: Path
     )
 
     assert result.returncode == 1
-    assert "Deployable source paths must route through DeployableSourcePlan" in result.stdout
+    assert "Deployable hook paths must route through the shared target-aware source selector" in (
+        result.stdout
+    )
 
 
 def test_plugin_bin_eligibility_guard_rejects_parallel_owner(tmp_path: Path) -> None:

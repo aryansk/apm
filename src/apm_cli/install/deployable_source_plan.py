@@ -45,6 +45,7 @@ class DeployableSourcePlan:
     paths: frozenset[str]
     selected_skill_names: frozenset[str] | None = None
     authorized_parent_prefixes: frozenset[str] = frozenset()
+    hook_source_selection: Any | None = None
 
     def __post_init__(self) -> None:
         """Index authorized parents for constant-time copy filtering."""
@@ -74,6 +75,7 @@ class DeployableSourcePlan:
         source_root = Path(package_info.install_path).resolve()
         paths: set[str] = set()
         selected_skill_names: frozenset[str] | None = None
+        hook_source_selection = None
         target_primitives = {primitive for target in targets for primitive in target.primitives}
 
         def add_file(path: Path) -> None:
@@ -120,22 +122,19 @@ class DeployableSourcePlan:
             add_matching_files(source_root / ".apm" / "instructions", "*.instructions.md")
 
         if hooks_approved and "hooks" in target_primitives:
-            hook_files: list[Path] = []
-            for root in (source_root / ".apm" / "hooks", source_root / "hooks"):
-                if not _is_safe_source_path(root, source_root) or not root.is_dir():
-                    continue
-                for path in root.glob("*.json"):
-                    if _is_safe_source_path(path, source_root) and path.is_file():
-                        hook_files.append(path)
-                        add_file(path)
-            if hook_files:
-                from apm_cli.integration.hook_integrator import HookIntegrator
+            from apm_cli.integration.hook_integrator import HookIntegrator
 
-                for path in HookIntegrator.find_deployable_hook_bundle_files(
-                    source_root,
-                    hook_files,
-                ):
-                    add_file(path)
+            hook_target_names = [
+                target.name
+                for target in targets
+                if "hooks" in target.primitives and hasattr(target, "name")
+            ]
+            hook_source_selection = HookIntegrator.select_deployable_hook_sources(
+                source_root,
+                hook_target_names,
+            )
+            for path in hook_source_selection.files:
+                add_file(path)
 
         if canvas_approved and "canvas" in target_primitives:
             from apm_cli.integration.canvas_integrator import CanvasIntegrator
@@ -175,6 +174,7 @@ class DeployableSourcePlan:
             source_root=source_root,
             paths=frozenset(paths),
             selected_skill_names=selected_skill_names,
+            hook_source_selection=hook_source_selection,
         )
 
     def includes(self, relative_path: str) -> bool:
