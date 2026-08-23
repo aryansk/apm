@@ -1047,6 +1047,7 @@ def test_authorized_source_plan_fixture_oracle_covers_symlinked_content(tmp_path
     from apm_cli.security.gate import BLOCK_POLICY, SecurityGate
 
     fixture = load_json_fixture("source-plan", "req-sc-015.json")
+    assert fixture["spec_anchor"] == "req-sc-015"
     source = fixture["input"]
     expected = fixture["expected"]
     package_root = tmp_path / "package"
@@ -1077,30 +1078,51 @@ def test_authorized_source_plan_fixture_oracle_covers_symlinked_content(tmp_path
         **kwargs,
     )
     expected_paths = frozenset(expected["authorized_paths"])
+    lifecycle_expectations = expected["lifecycles"]
 
     assert plan.paths == expected_paths
     assert all(not plan.includes(path) for path in expected["source_only_paths"])
     assert all(not plan.includes(path) for path in expected["symlink_paths"])
-    assert SecurityGate.scan_files(
+    install_scan = SecurityGate.scan_files(
         package_root,
         policy=BLOCK_POLICY,
         path_filter=plan.includes,
-    ).scanned_files == expected_paths
-
-    materialized = tmp_path / "materialized"
-    shutil.copytree(package_root, materialized, ignore=plan.copy_ignore)
-    materialized_paths = frozenset(
-        path.relative_to(materialized).as_posix()
-        for path in materialized.rglob("*")
-        if path.is_file() and not path.is_symlink()
     )
-    assert materialized_paths == expected_paths
+    assert install_scan.scanned_files == expected_paths
+
+    def materialize(destination: Path, source_plan: DeployableSourcePlan) -> frozenset[str]:
+        shutil.copytree(package_root, destination, ignore=source_plan.copy_ignore)
+        return frozenset(
+            path.relative_to(destination).as_posix()
+            for path in destination.rglob("*")
+            if path.is_file() and not path.is_symlink()
+        )
+
+    assert set(install_scan.scanned_files) == set(
+        lifecycle_expectations["install"]["scanned_paths"]
+    )
+    assert materialize(tmp_path / "materialized", plan) == frozenset(
+        lifecycle_expectations["install"]["materialized_paths"]
+    )
     reintegration_plan = DeployableSourcePlan.create(
         SimpleNamespace(install_path=package_root),
         [target],
         **kwargs,
     )
-    assert reintegration_plan.paths == plan.paths
+    reintegration_scan = SecurityGate.scan_files(
+        package_root,
+        policy=BLOCK_POLICY,
+        path_filter=reintegration_plan.includes,
+    )
+    assert reintegration_plan.paths == frozenset(
+        lifecycle_expectations["reintegration"]["authorized_paths"]
+    )
+    assert set(reintegration_scan.scanned_files) == set(
+        lifecycle_expectations["reintegration"]["scanned_paths"]
+    )
+    assert materialize(tmp_path / "reintegrated", reintegration_plan) == frozenset(
+        lifecycle_expectations["reintegration"]["materialized_paths"]
+    )
 
 
 @pytest.mark.req("req-sc-015")

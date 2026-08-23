@@ -3361,7 +3361,8 @@ The `source-plan/req-sc-015.json` oracle describes selected materialized
 content, source-only content, and excluded symlink files and directories
 for [req-sc-015](#req-sc-015). A consumer uses the oracle to demonstrate
 that scanning and materialization share the same authorized source set
-through install and re-integration.
+through both install and re-integration; each lifecycle result matches
+the oracle's authorized paths.
 
 ### 12.5 Round-trip conformance (normative)
 

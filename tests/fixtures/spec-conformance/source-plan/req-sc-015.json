@@ -1,4 +1,5 @@
 {
+  "spec_anchor": "req-sc-015",
   "input": {
     "skill_subset": [
       "selected"
@@ -60,6 +61,36 @@
       "skills/selected/assets/guide-link.txt",
       "skills/external/escaped/SKILL.md",
       ".apm/skills/escaped/SKILL.md"
-    ]
+    ],
+    "lifecycles": {
+      "install": {
+        "authorized_paths": [
+          "skills/selected/SKILL.md",
+          "skills/selected/assets/guide.txt"
+        ],
+        "scanned_paths": [
+          "skills/selected/SKILL.md",
+          "skills/selected/assets/guide.txt"
+        ],
+        "materialized_paths": [
+          "skills/selected/SKILL.md",
+          "skills/selected/assets/guide.txt"
+        ]
+      },
+      "reintegration": {
+        "authorized_paths": [
+          "skills/selected/SKILL.md",
+          "skills/selected/assets/guide.txt"
+        ],
+        "scanned_paths": [
+          "skills/selected/SKILL.md",
+          "skills/selected/assets/guide.txt"
+        ],
+        "materialized_paths": [
+          "skills/selected/SKILL.md",
+          "skills/selected/assets/guide.txt"
+        ]
+      }
+    }
   }
 }
