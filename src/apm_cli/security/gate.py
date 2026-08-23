@@ -83,10 +83,11 @@ class SecurityGate:
         force: bool = False,
         path_filter=None,
     ) -> ScanVerdict:
-        """Walk *root*, scan every regular file, return a verdict.
+        """Walk *root*, scan accepted regular files, and return a verdict.
 
         Symlinks are never followed (``followlinks=False``, ``is_symlink()``).
-        All files are scanned to produce a complete findings report.
+        When provided, *path_filter* receives a portable source-relative path
+        and selects the files included in the findings report.
         """
         findings_by_file: dict[str, list[ScanFinding]] = {}
         scanned_files: set[str] = set()
