@@ -26,6 +26,7 @@ did not touch the network" without relying on subprocess sentinels.
 
 from __future__ import annotations
 
+import os
 from datetime import datetime
 from pathlib import Path
 from unittest.mock import patch
@@ -35,6 +36,7 @@ import yaml
 from click.testing import CliRunner
 
 from apm_cli.cli import cli
+from apm_cli.deps.git_semver_resolver import GitSemverResolver
 from apm_cli.marketplace.ref_resolver import RemoteRef
 from apm_cli.models.apm_package import (
     APMPackage,
@@ -42,6 +44,8 @@ from apm_cli.models.apm_package import (
     clear_apm_yml_cache,
 )
 from apm_cli.models.dependency.types import GitReferenceType, ResolvedReference
+from tests.utils.isolated_apm_environment import IsolatedApmEnvironment
+from tests.utils.local_git_repository import LocalGitRepositoryFactory
 
 _PATCH_UPDATES = "apm_cli.commands._helpers.check_for_updates"
 
@@ -307,6 +311,111 @@ class TestSemverRangeResolves:
         assert locked.get("version") == "1.5.0"
         assert locked.get("resolved_commit") == "3" * 40
         assert locked.get("resolved_at"), "resolved_at timestamp missing"
+
+
+# ---------------------------------------------------------------------------
+# Positional virtual-subdirectory semver lifecycle
+# ---------------------------------------------------------------------------
+
+
+class TestPositionalVirtualSubdirectorySemver:
+    @pytest.mark.parametrize(
+        ("constraint", "expected_tag", "expected_version"),
+        [
+            (">=1.0.0", "pkg-v1.2.0", "1.2.0"),
+            ("~1.0.0", "pkg-v1.0.0", "1.0.0"),
+            ("^1.0.0", "pkg-v1.2.0", "1.2.0"),
+        ],
+    )
+    def test_positional_git_semver_uses_real_bare_remote_and_replays_lockfile(
+        self,
+        runner: CliRunner,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        constraint: str,
+        expected_tag: str,
+        expected_version: str,
+    ) -> None:
+        """Positional virtual ranges resolve tags before literal-ref preflight."""
+        isolated = IsolatedApmEnvironment.create(tmp_path / "isolated", base_env=dict(os.environ))
+        environment = isolated.subprocess_env()
+        source = isolated.package_root / "mono"
+        package = source / "packages" / "pkg"
+        package.mkdir(parents=True)
+        (package / "apm.yml").write_text(
+            "name: pkg\nversion: 1.0.0\ndescription: fixture package\n",
+            encoding="utf-8",
+        )
+
+        repositories = LocalGitRepositoryFactory(isolated.repository_root, env=environment)
+        repository = repositories.create("mono", source_tree=source)
+        first_commit = repositories.commit(repository, message="pkg v1.0.0")
+        repositories.tag(repository, "pkg-v1.0.0", first_commit)
+        (repository.worktree / "packages" / "pkg" / "README.md").write_text(
+            "# pkg 1.2.0\n",
+            encoding="utf-8",
+        )
+        second_commit = repositories.commit(repository, message="pkg v1.2.0")
+        repositories.tag(repository, "pkg-v1.2.0", second_commit)
+
+        for name, value in repositories.url_rewrite_subprocess_env(
+            repository,
+            "https://github.com/acme/mono.git",
+        ).items():
+            monkeypatch.setenv(name, value)
+
+        project = isolated.work_root / "consumer"
+        _write_apm_yml(project, [])
+        raw_reference = f"acme/mono/packages/pkg#{constraint}"
+        resolver_calls: list[tuple[str, str, str]] = []
+        original_resolve = GitSemverResolver.resolve
+
+        def capture_resolve(
+            self: GitSemverResolver,
+            *,
+            owner_repo: str,
+            package_name: str,
+            constraint: str,
+            remote_url: str | None = None,
+        ):
+            resolver_calls.append((owner_repo, package_name, constraint))
+            return original_resolve(
+                self,
+                owner_repo=owner_repo,
+                package_name=package_name,
+                constraint=constraint,
+                remote_url=remote_url,
+            )
+
+        downloader = _DownloaderStub(
+            {
+                "pkg-v1.0.0": first_commit.sha,
+                "pkg-v1.2.0": second_commit.sha,
+            }
+        )
+        downloader.install(monkeypatch)
+        monkeypatch.setattr(GitSemverResolver, "resolve", capture_resolve)
+
+        first = _run_install(runner, project, monkeypatch, [raw_reference])
+        assert first.exit_code == 0, first.output
+        assert resolver_calls == [("acme/mono", "pkg", constraint)]
+        assert downloader.calls == [("acme/mono", expected_tag)]
+
+        lock_path = project / "apm.lock.yaml"
+        first_lock = lock_path.read_bytes()
+        locked = _find_locked(_read_lockfile(project), "acme/mono")
+        assert locked is not None
+        assert locked["constraint"] == constraint
+        assert locked["resolved_tag"] == expected_tag
+        assert locked["resolved_commit"] == (
+            first_commit.sha if expected_tag == "pkg-v1.0.0" else second_commit.sha
+        )
+        assert locked["version"] == expected_version
+
+        second = _run_install(runner, project, monkeypatch)
+        assert second.exit_code == 0, second.output
+        assert resolver_calls == [("acme/mono", "pkg", constraint)]
+        assert lock_path.read_bytes() == first_lock
 
 
 # ---------------------------------------------------------------------------
