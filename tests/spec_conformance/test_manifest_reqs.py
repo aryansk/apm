@@ -1047,16 +1047,18 @@ def test_authorized_source_plan_fixture_oracle_covers_symlinked_content(tmp_path
     from apm_cli.security.gate import BLOCK_POLICY, SecurityGate
 
     fixture = load_json_fixture("source-plan", "req-sc-015.json")
+    source = fixture["input"]
+    expected = fixture["expected"]
     package_root = tmp_path / "package"
-    for entry in fixture["package_files"]:
+    for entry in source["package_files"]:
         path = package_root / entry["path"]
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(entry["content"], encoding="utf-8")
-    for entry in fixture["external_files"]:
+    for entry in source["external_files"]:
         path = tmp_path / entry["path"]
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(entry["content"], encoding="utf-8")
-    for entry in fixture["symlinks"]:
+    for entry in source["symlinks"]:
         path = package_root / entry["path"]
         path.parent.mkdir(parents=True, exist_ok=True)
         target = package_root / entry["target"] if entry["internal"] else tmp_path / entry["target"]
@@ -1064,7 +1066,7 @@ def test_authorized_source_plan_fixture_oracle_covers_symlinked_content(tmp_path
 
     target = SimpleNamespace(primitives={"skills": object()})
     kwargs = {
-        "skill_subset": tuple(fixture["skill_subset"]),
+        "skill_subset": tuple(source["skill_subset"]),
         "hooks_approved": False,
         "canvas_approved": False,
         "skip_bin": True,
@@ -1074,11 +1076,11 @@ def test_authorized_source_plan_fixture_oracle_covers_symlinked_content(tmp_path
         [target],
         **kwargs,
     )
-    expected_paths = frozenset(fixture["oracle"]["authorized_paths"])
+    expected_paths = frozenset(expected["authorized_paths"])
 
     assert plan.paths == expected_paths
-    assert all(not plan.includes(path) for path in fixture["oracle"]["source_only_paths"])
-    assert all(not plan.includes(path) for path in fixture["oracle"]["symlink_paths"])
+    assert all(not plan.includes(path) for path in expected["source_only_paths"])
+    assert all(not plan.includes(path) for path in expected["symlink_paths"])
     assert SecurityGate.scan_files(
         package_root,
         policy=BLOCK_POLICY,

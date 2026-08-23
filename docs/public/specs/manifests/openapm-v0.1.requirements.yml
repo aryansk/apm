@@ -489,6 +489,7 @@ requirements:
     keyword: MUST
     section: "10.16"
     conformance_class: consumer
+    oracle: tests/fixtures/spec-conformance/source-plan/req-sc-015.json
     notes: "one post-authorization source-file set drives every install and uninstall re-integration scan and primitive materialization; source-only files and symlink entries are excluded"
   - id: req-rg-001
     keyword: MUST

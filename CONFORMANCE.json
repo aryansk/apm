@@ -1180,6 +1180,7 @@
       "conformance_class": "consumer",
       "id": "req-sc-015",
       "keyword": "MUST",
+      "oracle": "tests/fixtures/spec-conformance/source-plan/req-sc-015.json",
       "section": "10.16",
       "status": "active",
       "test_count": 3,

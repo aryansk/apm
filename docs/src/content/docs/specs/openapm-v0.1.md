@@ -3342,6 +3342,8 @@ tests/fixtures/spec-conformance/
     invalid-extends-cycle.yml
   resolution/
     semver-dialect.json
+  source-plan/
+    req-sc-015.json
 ```
 
 Conformance-suite expansion (additional fixtures for archive
@@ -3354,6 +3356,12 @@ The lockfile fixture `materialization-sort-exclusion.yml` exercises
 `v1-git-only.yml` exercises transactional spelling migration and
 collision refusal through the [req-lk-022](#req-lk-022) conformance
 oracles.
+
+The `source-plan/req-sc-015.json` oracle describes selected materialized
+content, source-only content, and excluded symlink files and directories
+for [req-sc-015](#req-sc-015). A consumer uses the oracle to demonstrate
+that scanning and materialization share the same authorized source set
+through install and re-integration.
 
 ### 12.5 Round-trip conformance (normative)
 
