@@ -23,6 +23,48 @@ def _skill_target() -> SimpleNamespace:
     return SimpleNamespace(primitives={"skills": object()})
 
 
+def _primitive_target(primitive: str) -> SimpleNamespace:
+    return SimpleNamespace(primitives={primitive: object()})
+
+
+@pytest.mark.parametrize(
+    ("primitive", "relative_path", "hooks_approved", "canvas_approved"),
+    [
+        ("prompts", "prompt.prompt.md", False, False),
+        ("agents", "agent.agent.md", False, False),
+        ("instructions", ".apm/instructions/project.instructions.md", False, False),
+        ("hooks", ".apm/hooks/pre-commit.json", True, False),
+        ("canvas", ".apm/extensions/canvas.py", False, True),
+    ],
+)
+def test_supported_primitives_scan_only_authorized_files(
+    tmp_path: Path,
+    primitive: str,
+    relative_path: str,
+    hooks_approved: bool,
+    canvas_approved: bool,
+) -> None:
+    """Every non-skill primitive keeps source-only files outside the scan plan."""
+    deployable = tmp_path / relative_path
+    deployable.parent.mkdir(parents=True, exist_ok=True)
+    deployable.write_text("clean\n", encoding="utf-8")
+    (tmp_path / "src").mkdir()
+    (tmp_path / "src" / "fixture.txt").write_text("source \u202e fixture\n", encoding="utf-8")
+
+    plan = DeployableSourcePlan.create(
+        _package(tmp_path),
+        [_primitive_target(primitive)],
+        skill_subset=None,
+        hooks_approved=hooks_approved,
+        canvas_approved=canvas_approved,
+        skip_bin=True,
+    )
+    verdict = SecurityGate.scan_files(tmp_path, path_filter=plan.includes)
+
+    assert verdict.should_block is False
+    assert verdict.scanned_files == frozenset({relative_path})
+
+
 def test_source_only_hidden_character_is_not_in_authorized_scan(tmp_path: Path) -> None:
     """A nested clean skill remains installable when source-only fixtures are hostile."""
     skill = tmp_path / "skills" / "clean"

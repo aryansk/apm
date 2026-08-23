@@ -9,6 +9,7 @@ import stat
 from collections.abc import Callable
 from dataclasses import dataclass, replace
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from apm_cli.core.deployment_state import MaterializationResult
 from apm_cli.install.services import enforce_agent_plugin_deployment_boundary
@@ -16,6 +17,9 @@ from apm_cli.integration.base_integrator import BaseIntegrator
 from apm_cli.integration.targets import TargetProfile
 from apm_cli.models.dependency.subsets import skill_subset_filter_tokens
 from apm_cli.utils.atomic_io import write_text_lf
+
+if TYPE_CHECKING:
+    from apm_cli.install.deployable_source_plan import DeployableSourcePlan
 
 
 def _build_copy_ignore(
@@ -38,6 +42,27 @@ def _build_copy_ignore(
         return list(
             set(ignore_non_content(directory, contents)) | set(_bin_filter(directory, contents))
         )
+
+    return _combined
+
+
+def _build_deployable_copy_ignore(
+    *,
+    skip_bin: bool = False,
+    source_plan: "DeployableSourcePlan | None" = None,
+    exclude_apm: bool = False,
+) -> Callable[[str, list[str]], list[str]]:
+    """Build a copy filter constrained to the authorized source plan."""
+    base_ignore = _build_copy_ignore(skip_bin=skip_bin)
+    apm_filter = shutil.ignore_patterns(".apm") if exclude_apm else None
+
+    def _combined(directory: str, contents: list[str]) -> list[str]:
+        ignored = set(base_ignore(directory, contents))
+        if apm_filter is not None:
+            ignored.update(apm_filter(directory, contents))
+        if source_plan is not None:
+            ignored.update(source_plan.copy_ignore(directory, contents))
+        return list(ignored)
 
     return _combined
 
@@ -685,6 +710,7 @@ class SkillIntegrator(BaseIntegrator):
         logger=None,
         name_filter: set[str] | None = None,
         link_rewriter: "SkillIntegrator | None" = None,
+        source_plan: "DeployableSourcePlan | None" = None,
     ) -> tuple[int, list[Path]]:
         """Promote sub-skills from .apm/skills/ to top-level skill entries.
 
@@ -792,7 +818,10 @@ class SkillIntegrator(BaseIntegrator):
                 sub_skill_path,
                 target,
                 dirs_exist_ok=True,
-                ignore=_build_copy_ignore(skip_bin=skip_bin),
+                ignore=_build_deployable_copy_ignore(
+                    skip_bin=skip_bin,
+                    source_plan=source_plan,
+                ),
             )
             if link_rewriter is not None:
                 link_rewriter._resolve_markdown_links_in_skill_bundle(sub_skill_path, target)
@@ -868,6 +897,7 @@ class SkillIntegrator(BaseIntegrator):
         targets=None,
         skill_subset=None,
         skip_bin: bool = False,
+        source_plan: "DeployableSourcePlan | None" = None,
     ) -> tuple[int, list[Path]]:
         """Promote sub-skills from a package that is NOT itself a skill.
 
@@ -902,7 +932,11 @@ class SkillIntegrator(BaseIntegrator):
         _dep_ref = getattr(package_info, "dependency_ref", None)
         parent_name = _dep_ref.get_unique_key() if _dep_ref is not None else package_path.name
         owned_by = self._build_skill_ownership_map(project_root)
-        name_filter = skill_subset_filter_tokens(skill_subset)
+        name_filter = (
+            source_plan.selected_skill_names
+            if source_plan is not None
+            else skill_subset_filter_tokens(skill_subset)
+        )
         count = 0
         all_deployed: list[Path] = []
         seen_skill_dirs: set[Path] = set()
@@ -944,6 +978,7 @@ class SkillIntegrator(BaseIntegrator):
                 name_filter=name_filter,
                 link_rewriter=self,
                 skip_bin=skip_bin,
+                source_plan=source_plan,
             )
             if is_primary:
                 count = n
@@ -971,7 +1006,7 @@ class SkillIntegrator(BaseIntegrator):
         logger=None,
         targets=None,
         skip_bin: bool = False,
-        source_plan=None,
+        source_plan: "DeployableSourcePlan | None" = None,
     ) -> SkillIntegrationResult:
         """Copy a native Skill (with existing SKILL.md) to all active targets.
 
@@ -1140,18 +1175,15 @@ class SkillIntegrator(BaseIntegrator):
                 shutil.rmtree(target_skill_dir)
 
             target_skill_dir.parent.mkdir(parents=True, exist_ok=True)
-            _base_ignore = _build_copy_ignore(skip_bin=skip_bin)
-
-            _apm_filter = shutil.ignore_patterns(".apm")
-
-            def _ignore_non_content_and_apm(directory, contents):
-                return list(
-                    set(_base_ignore(directory, contents))  # noqa: B023
-                    | set(_apm_filter(directory, contents))  # noqa: B023
-                    | set(source_plan.copy_ignore(directory, contents) if source_plan else ())
-                )
-
-            shutil.copytree(package_path, target_skill_dir, ignore=_ignore_non_content_and_apm)
+            shutil.copytree(
+                package_path,
+                target_skill_dir,
+                ignore=_build_deployable_copy_ignore(
+                    skip_bin=skip_bin,
+                    source_plan=source_plan,
+                    exclude_apm=True,
+                ),
+            )
             self._resolve_markdown_links_in_skill_bundle(package_path, target_skill_dir)
             all_target_paths.append(target_skill_dir)
 
@@ -1175,6 +1207,7 @@ class SkillIntegrator(BaseIntegrator):
                 logger=logger if is_primary else None,
                 link_rewriter=self,
                 skip_bin=skip_bin,
+                source_plan=source_plan,
             )
             all_target_paths.extend(sub_deployed)
 
@@ -1212,6 +1245,7 @@ class SkillIntegrator(BaseIntegrator):
         targets=None,
         skill_subset=None,
         skip_bin: bool = False,
+        source_plan: "DeployableSourcePlan | None" = None,
     ) -> SkillIntegrationResult:
         """Promote every skill in a SKILL_BUNDLE's top-level skills/ directory.
 
@@ -1256,7 +1290,11 @@ class SkillIntegrator(BaseIntegrator):
         available_names = self._skill_names_in_directory(skills_dir)
 
         # Convert skill_subset tuple to promotion filter tokens for O(1) lookup.
-        _name_filter = skill_subset_filter_tokens(skill_subset)
+        _name_filter = (
+            source_plan.selected_skill_names
+            if source_plan is not None
+            else skill_subset_filter_tokens(skill_subset)
+        )
 
         for target in targets:
             if not target.supports("skills"):
@@ -1295,6 +1333,7 @@ class SkillIntegrator(BaseIntegrator):
                 name_filter=_name_filter,
                 link_rewriter=self,
                 skip_bin=skip_bin,
+                source_plan=source_plan,
             )
             if is_primary:
                 total_promoted = n
@@ -1465,6 +1504,7 @@ class SkillIntegrator(BaseIntegrator):
                     logger=logger,
                     targets=targets,
                     skip_bin=skip_bin,
+                    source_plan=source_plan,
                 ),
                 bin_paths,
                 bin_skip_reason,
@@ -1487,6 +1527,7 @@ class SkillIntegrator(BaseIntegrator):
                     targets=targets,
                     skill_subset=skill_subset,
                     skip_bin=skip_bin,
+                    source_plan=source_plan,
                 ),
                 bin_paths,
                 bin_skip_reason,
@@ -1504,6 +1545,7 @@ class SkillIntegrator(BaseIntegrator):
             targets=targets,
             skill_subset=skill_subset,
             skip_bin=skip_bin,
+            source_plan=source_plan,
         )
         return self._merge_bin_paths(
             SkillIntegrationResult(

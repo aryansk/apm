@@ -528,7 +528,7 @@ For an org standardizing on APM:
 
 ### Can a package embed hidden instructions?
 
-Not without detection. APM scans all package source files before deployment. Critical hidden characters (tag characters, bidi overrides) block deployment. `apm audit` provides on-demand scanning for any file, including those obtained outside APM.
+Not in files selected for deployment. `apm install` scans every authorized deployable source file before copying it. Critical hidden characters (tag characters, bidi overrides) block deployment. Source-only files are not deployed by this step; use `apm audit` to scan any file on demand, including those obtained outside APM.
 
 ### How do I audit what APM installed?
 

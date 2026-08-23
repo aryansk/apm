@@ -685,6 +685,13 @@ def test_deployable_source_paths_have_single_authorized_plan() -> None:
     assert "source_plan.copy_ignore" in skills
     assert "Deployable source paths must route through DeployableSourcePlan" in guard
 
+    def function_body(signature: str) -> str:
+        return skills.split(signature, 1)[1].split("\n    def ", 1)[0]
+
+    assert "source_plan=source_plan" in function_body("def _integrate_native_skill(")
+    assert "source_plan=source_plan" in function_body("def _integrate_skill_bundle(")
+    assert "source_plan=source_plan" in function_body("def integrate_package_skill(")
+
 
 def test_deployable_source_plan_guard_rejects_parallel_classifier(tmp_path: Path) -> None:
     """The boundary lint rejects a second deployable-path authority."""

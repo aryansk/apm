@@ -22,6 +22,7 @@ class DeployableSourcePlan:
 
     source_root: Path
     paths: frozenset[str]
+    selected_skill_names: frozenset[str] | None = None
 
     @classmethod
     def create(
@@ -33,10 +34,12 @@ class DeployableSourcePlan:
         hooks_approved: bool,
         canvas_approved: bool,
         skip_bin: bool,
+        plugin_bin_deployable: bool = False,
     ) -> DeployableSourcePlan:
         """Build the authorized deploy set after all deployment gates resolve."""
         source_root = Path(package_info.install_path)
         paths: set[str] = set()
+        selected_skill_names: frozenset[str] | None = None
         target_primitives = {primitive for target in targets for primitive in target.primitives}
 
         def add_file(path: Path) -> None:
@@ -83,6 +86,7 @@ class DeployableSourcePlan:
                     add_tree(source_root / "bin")
 
             selected = skill_subset_filter_tokens(skill_subset)
+            selected_skill_names = frozenset(selected) if selected is not None else None
             for skills_root in (source_root / "skills", source_root / ".apm" / "skills"):
                 if not skills_root.is_dir():
                     continue
@@ -94,7 +98,15 @@ class DeployableSourcePlan:
                     ):
                         add_tree(skill_dir)
 
-        return cls(source_root=source_root, paths=frozenset(paths))
+        if plugin_bin_deployable:
+            add_tree(source_root / "bin")
+            add_file(source_root / ".claude-plugin" / "plugin.json")
+
+        return cls(
+            source_root=source_root,
+            paths=frozenset(paths),
+            selected_skill_names=selected_skill_names,
+        )
 
     def includes(self, relative_path: str) -> bool:
         """Return whether a portable source-relative path is authorized."""

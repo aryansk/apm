@@ -45,9 +45,9 @@ def _pre_deploy_security_scan(
             logger.error(
                 f"  Blocked: {package_name or 'package'} contains critical hidden character(s)"
             )
-            logger.tree_item(f"  |-- Source checkout: {source_plan.source_root}")
             logger.tree_item(
-                "  |-- Note: a failed install may remove this checkout during transaction cleanup"
+                f"  |-- Inspect source now: {source_plan.source_root} "
+                "(cleanup may remove it after this failure)"
             )
             logger.tree_item("  |-- Use --force to deploy anyway")
         return False

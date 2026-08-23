@@ -252,7 +252,7 @@ def test_hidden_character_in_selected_skill_blocks_without_deployment_or_lock_mu
     assert not (project / ".agents" / "skills" / "clean").exists()
     assert not (project / "apm.lock.yaml").exists()
     assert (project / "apm.yml").read_bytes() == before_manifest
-    assert "may remove this checkout during transaction cleanup" in result.output
+    assert "cleanup may remove it after this failure" in result.output
 
 
 @pytest.mark.lifecycle_smoke

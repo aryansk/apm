@@ -240,6 +240,43 @@ def _resolve_bin_skip(
     return False, None
 
 
+def _plugin_bin_deployable(
+    package_info: Any,
+    targets: list[Any],
+    *,
+    project_root: Path,
+    scope: Any,
+    policy: Any,
+    skip_bin: bool,
+) -> bool:
+    """Return whether plugin bin and manifest files can reach a target."""
+    from apm_cli.core.scope import InstallScope
+    from apm_cli.models.apm_package import PackageType
+    from apm_cli.security.executables import normalize_bin_deploy_deny_key
+
+    if (
+        skip_bin
+        or package_info.package_type is not PackageType.MARKETPLACE_PLUGIN
+        or scope is not InstallScope.USER
+        or not (Path(package_info.install_path) / "bin").is_dir()
+        or not any(
+            target.name == "claude"
+            and target.supports("skills")
+            and (target.auto_create or (project_root / target.root_dir).is_dir())
+            for target in targets
+        )
+    ):
+        return False
+    bin_policy = getattr(policy, "bin_deploy", None)
+    if bin_policy is None:
+        return True
+    if bin_policy.deny_all:
+        return False
+    package_key = normalize_bin_deploy_deny_key(package_info.get_canonical_dependency_string())
+    denied = {normalize_bin_deploy_deny_key(item) for item in bin_policy.deny}
+    return package_key not in denied
+
+
 def integrate_package_primitives(  # noqa: PLR0913
     package_info: Any,
     project_root: Path,
@@ -385,6 +422,14 @@ def integrate_package_primitives(  # noqa: PLR0913
         hooks_approved=_hooks_approved,
         canvas_approved=_canvas_approved or is_first_party,
         skip_bin=_skip_bin,
+        plugin_bin_deployable=_plugin_bin_deployable(
+            package_info,
+            targets,
+            project_root=project_root,
+            scope=scope,
+            policy=policy,
+            skip_bin=_skip_bin,
+        ),
     )
     if not _pre_deploy_security_scan(
         source_plan,
