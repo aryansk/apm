@@ -264,6 +264,22 @@ if [ "$deployable_plan_definition_count" -ne 1 ] \
     [ -n "$deployable_plan_duplicate_hits" ] && echo "$deployable_plan_duplicate_hits"
     violations=$((violations + 1))
 fi
+bin_deploy_owner="src/apm_cli/install/exec_gate.py"
+bin_deploy_definition_count=$(grep -Ec '^def plugin_bin_deployable\(' "$bin_deploy_owner" || true)
+bin_deploy_duplicate_hits=$(
+    grep -rEn --include='*.py' \
+        '^def _?plugin_bin_deployable\(' \
+        src/apm_cli/install \
+        | grep -Fv "${bin_deploy_owner}:" \
+        || true
+)
+if [ "$bin_deploy_definition_count" -ne 1 ] \
+    || ! grep -Fq 'plugin_bin_deployable as _plugin_bin_deployable' src/apm_cli/install/services.py \
+    || [ -n "$bin_deploy_duplicate_hits" ]; then
+    echo "[x] Plugin bin deployment eligibility must route through install/exec_gate.py"
+    [ -n "$bin_deploy_duplicate_hits" ] && echo "$bin_deploy_duplicate_hits"
+    violations=$((violations + 1))
+fi
 check_pattern \
     "Install adapters must not classify diagnostics" \
     'classify_post_install_result' \

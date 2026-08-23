@@ -19,7 +19,7 @@ All four conformance classes (Producer, Consumer, Registry, Governance) carry ac
 | Class | Active | Skipped | Xfail | Unbound |
 |-------|-------:|--------:|------:|--------:|
 | Producer | 12 | 0 | 0 | 0 |
-| Consumer | 84 | 1 | 0 | 0 |
+| Consumer | 85 | 1 | 0 | 0 |
 | Registry | 1 | 0 | 0 | 0 |
 | Governance | 17 | 0 | 0 | 0 |
 
@@ -130,6 +130,7 @@ All four conformance classes (Producer, Consumer, Registry, Governance) carry ac
 | [req-sc-012](docs/src/content/docs/specs/openapm-v0.1.md#req-sc-012) | MUST | 10.14 | consumer | active | 1 |
 | [req-sc-013](docs/src/content/docs/specs/openapm-v0.1.md#req-sc-013) | MUST | 10.3 | consumer | active | 1 |
 | [req-sc-014](docs/src/content/docs/specs/openapm-v0.1.md#req-sc-014) | MUST | 10.15 | consumer | active | 1 |
+| [req-sc-015](docs/src/content/docs/specs/openapm-v0.1.md#req-sc-015) | MUST | 10.15 | consumer | active | 1 |
 | [req-tg-001](docs/src/content/docs/specs/openapm-v0.1.md#req-tg-001) | MUST | 8.4 | consumer | active | 1 |
 | [req-tg-002](docs/src/content/docs/specs/openapm-v0.1.md#req-tg-002) | MUST | 8.5 | consumer | active | 1 |
 | [req-tg-003](docs/src/content/docs/specs/openapm-v0.1.md#req-tg-003) | MUST | 8.5 | consumer | active | 1 |

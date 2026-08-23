@@ -27,6 +27,9 @@ from apm_cli.agent_plugins.errors import enforce_agent_plugin_deployment_boundar
 
 from .deployed_paths import deployed_path_entry as _deployed_path_entry
 from .deployed_paths import skill_bundle_file_entries as _skill_bundle_file_entries
+from .exec_gate import check_executable_approval
+from .exec_gate import plugin_bin_deployable as _plugin_bin_deployable
+from .exec_gate import resolve_bin_skip as _resolve_bin_skip
 from .local_bundle_paths import bundle_deploy_relative_path as _bundle_rel
 from .local_bundle_paths import bundle_pack_files as _bundle_pack_files
 from .local_bundle_paths import bundle_slug_validation_error as _bundle_slug_error
@@ -127,26 +130,6 @@ def _emit_integration_hints(prim_name: str, info: dict, log_integration) -> None
         log_integration("  |-- reload the Copilot session (/clear) or restart to load the canvas")
 
 
-def _check_executable_approval(
-    package_name: str,
-    package_info: Any,
-    allow_executables: builtins.dict[str, builtins.dict[str, bool]] | None,
-    *,
-    ctx: InstallContext | None = None,
-) -> tuple[bool, bool, bool, bool, bool]:
-    """Delegate to ``exec_gate.check_executable_approval``."""
-    from apm_cli.install.exec_gate import check_executable_approval
-
-    return check_executable_approval(package_name, package_info, allow_executables, ctx=ctx)
-
-
-def _resolve_package_key(package_info: Any, package_name: str) -> str:
-    """Delegate to ``exec_gate.resolve_package_key``."""
-    from apm_cli.install.exec_gate import resolve_package_key
-
-    return resolve_package_key(package_info, package_name)
-
-
 def _log_hooks_skip(
     package_name: str, package_info: Any, targets: Any, logger: InstallLogger | None
 ) -> None:
@@ -214,67 +197,6 @@ def _warn_target_reconcile_failure(
             f"configs: [{', '.join(failed_paths)}]; run apm install again"
         ),
     )
-
-
-def _resolve_bin_skip(
-    bin_approved: bool,
-    trust_bin: bool | None,
-    *,
-    non_interactive: bool = False,
-) -> tuple[bool, str | None]:
-    """Combine the ``allowExecutables`` gate with the ``--trust-bin`` flag.
-
-    Returns ``(skip_bin, bin_skip_reason_override)`` for
-    ``integrate_package_skill``.
-
-    When *non_interactive* is ``True`` (stdout is not a TTY) and *trust_bin*
-    is ``None`` (no explicit flag), bin/ deployment is skipped to preserve
-    the fail-closed posture in CI and piped contexts.
-    """
-    if not bin_approved:
-        return True, "not_approved"
-    if trust_bin is False:
-        return True, "not_trusted"
-    if trust_bin is None and non_interactive:
-        return True, "not_trusted"
-    return False, None
-
-
-def _plugin_bin_deployable(
-    package_info: Any,
-    targets: list[Any],
-    *,
-    project_root: Path,
-    scope: Any,
-    policy: Any,
-    skip_bin: bool,
-) -> bool:
-    """Return whether plugin bin and manifest files can reach a target."""
-    from apm_cli.core.scope import InstallScope
-    from apm_cli.models.apm_package import PackageType
-    from apm_cli.security.executables import normalize_bin_deploy_deny_key
-
-    if (
-        skip_bin
-        or package_info.package_type is not PackageType.MARKETPLACE_PLUGIN
-        or scope is not InstallScope.USER
-        or not (Path(package_info.install_path) / "bin").is_dir()
-        or not any(
-            target.name == "claude"
-            and target.supports("skills")
-            and (target.auto_create or (project_root / target.root_dir).is_dir())
-            for target in targets
-        )
-    ):
-        return False
-    bin_policy = getattr(policy, "bin_deploy", None)
-    if bin_policy is None:
-        return True
-    if bin_policy.deny_all:
-        return False
-    package_key = normalize_bin_deploy_deny_key(package_info.get_canonical_dependency_string())
-    denied = {normalize_bin_deploy_deny_key(item) for item in bin_policy.deny}
-    return package_key not in denied
 
 
 def integrate_package_primitives(  # noqa: PLR0913
@@ -406,7 +328,7 @@ def integrate_package_primitives(  # noqa: PLR0913
         _mcp_approved,
         _canvas_approved,
         _lsp_approved,
-    ) = _check_executable_approval(package_name, package_info, allow_executables, ctx=ctx)
+    ) = check_executable_approval(package_name, package_info, allow_executables, ctx=ctx)
     import sys
 
     _skip_bin, _bin_skip_reason_override = _resolve_bin_skip(

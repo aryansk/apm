@@ -998,3 +998,41 @@ def test_bin_deployment_defaults_to_deny_in_non_interactive_context() -> None:
         "MUST deny\nthat deployment by default when its standard output is not connected to a",
         "explicitly opted in for that invocation",
     )
+
+
+@pytest.mark.req("req-sc-015")
+def test_authorized_source_plan_limits_scanning_and_skill_materialization(tmp_path: Path) -> None:
+    """Selected deployable files alone are scanned and admitted to a skill copy."""
+    from apm_cli.install.deployable_source_plan import DeployableSourcePlan
+    from apm_cli.security.gate import BLOCK_POLICY, SecurityGate
+
+    package_root = tmp_path / "package"
+    selected = package_root / "skills" / "selected" / "SKILL.md"
+    source_only = package_root / "source-only.txt"
+    selected.parent.mkdir(parents=True)
+    selected.write_text("selected\n", encoding="utf-8")
+    source_only.write_text("source-only\u202e\n", encoding="utf-8")
+    target = SimpleNamespace(primitives={"skills": object()})
+    plan = DeployableSourcePlan.create(
+        SimpleNamespace(install_path=package_root),
+        [target],
+        skill_subset=("selected",),
+        hooks_approved=False,
+        canvas_approved=False,
+        skip_bin=True,
+    )
+
+    assert not plan.includes("source-only.txt")
+    assert plan.copy_ignore(str(package_root), ["source-only.txt"]) == ["source-only.txt"]
+    assert not SecurityGate.scan_files(
+        package_root,
+        policy=BLOCK_POLICY,
+        path_filter=plan.includes,
+    ).has_findings
+
+    selected.write_text("selected\u202e\n", encoding="utf-8")
+    assert SecurityGate.scan_files(
+        package_root,
+        policy=BLOCK_POLICY,
+        path_filter=plan.includes,
+    ).has_findings
