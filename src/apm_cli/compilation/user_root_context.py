@@ -136,10 +136,10 @@ def discover_global_instructions(
     logger: _logging_module.Logger | None = None,
     include_scoped: bool = False,
 ) -> list[Instruction]:
-    """Return global (apply_to-less) instructions under ``source_root/apm_modules``.
+    """Return global instructions and optionally scoped ones from ``apm_modules``.
 
     Returns an empty list when the ``apm_modules`` tree is absent or carries no
-    global instructions.  Results are sorted by file path for determinism so
+    matching instructions. Results are sorted by file path for determinism so
     callers (the compile engine and the install-time hint) agree on ordering.
     """
     from ..primitives.discovery import discover_primitives
