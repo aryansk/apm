@@ -31,6 +31,7 @@ import subprocess
 import sys
 from datetime import datetime
 from pathlib import Path
+from urllib.parse import urlparse
 from unittest.mock import patch
 
 import pytest
@@ -420,10 +421,17 @@ class TestPositionalVirtualSubdirectorySemver:
         )
         assert first.returncode == 0, f"stdout={first.stdout!r}\nstderr={first.stderr!r}"
         assert raw_reference in first.stdout
-        assert (
-            "git ls-remote --tags --heads https://github.com/acme/mono.git"
-            in trace_path.read_text(encoding="utf-8")
-        )
+        trace = trace_path.read_text(encoding="utf-8")
+        assert "git ls-remote --tags --heads" in trace
+        parsed_trace_urls = [
+            urlparse(token.strip("'\""))
+            for token in trace.split()
+            if "://" in token
+        ]
+        assert ("https", "github.com", "/acme/mono.git") in [
+            (parsed.scheme, parsed.hostname, parsed.path)
+            for parsed in parsed_trace_urls
+        ]
 
         lock_path = project / "apm.lock.yaml"
         first_lock = lock_path.read_bytes()
