@@ -23,7 +23,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-pytestmark = pytest.mark.requires_apm_binary
+pytestmark = [pytest.mark.e2e, pytest.mark.requires_apm_binary]
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -123,6 +123,7 @@ def opencode_package(tmp_path):
     pkg = tmp_path / "opencode-package"
     pkg.mkdir()
     (pkg / "apm.yml").write_text("name: opencode-package\nversion: 1.0.0\n", encoding="utf-8")
+    (pkg / "SKILL.md").write_text("# OpenCode package\n", encoding="utf-8")
     instructions = pkg / ".apm" / "instructions"
     instructions.mkdir(parents=True)
     (instructions / "global.instructions.md").write_text(
@@ -478,6 +479,7 @@ class TestGlobalGeminiScope:
 class TestGlobalOpenCodeScope:
     """Verify the native OpenCode user-scope lifecycle through the installed CLI."""
 
+    @pytest.mark.lifecycle_smoke
     def test_opencode_skill_and_scoped_instruction_lifecycle(
         self, apm_binary_path, fake_home, opencode_package
     ):

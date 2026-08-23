@@ -117,7 +117,7 @@ GitHub Copilot (CLI and IDE).
   - prompts: `.github/prompts/<name>.prompt.md`
   - agents: `.github/agents/<name>.agent.md`
   - skills: `.agents/skills/<name>/SKILL.md` at project scope and
-    `~/.config/opencode/skills/<name>/SKILL.md` at user scope
+    `~/.agents/skills/<name>/SKILL.md` at user scope
   - hooks: `.github/hooks/<name>.json`
   - generated: `.github/copilot-instructions.md` (compile output)
 - **User scope.** Partial. `prompts` deploy under `~/.copilot/prompts/`;

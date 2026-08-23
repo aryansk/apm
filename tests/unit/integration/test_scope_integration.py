@@ -191,11 +191,13 @@ class TestOpenCodeScopeResolution:
         (skill_dir / "SKILL.md").write_text("# Reviewer skill")
         pkg_info = _make_package_info(pkg)
 
-        result = SkillIntegrator().integrate_skills_for_target(
-            resolved, pkg_info, self.project_root
+        result = SkillIntegrator().integrate_package_skill(
+            pkg_info,
+            self.project_root,
+            targets=[resolved],
         )
 
-        assert result.files_integrated == 1
+        assert result.sub_skills_promoted == 1
         expected = self.project_root / ".config" / "opencode" / "skills" / "reviewer" / "SKILL.md"
         assert expected.exists()
         assert not (self.project_root / ".agents" / "skills" / "reviewer" / "SKILL.md").exists()
