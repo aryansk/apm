@@ -59,15 +59,10 @@ from apm_cli.core.deployment_state import (
     NativePayloadValidation,
 )
 from apm_cli.core.scope import InstallScope
-from apm_cli.hook_contract import (
-    HOOK_COMMAND_KEYS as _HOOK_COMMAND_KEYS,
-)
-from apm_cli.hook_contract import (
-    walk_hook_commands,
-)
+from apm_cli.hook_contract import HOOK_COMMAND_KEYS as _HOOK_COMMAND_KEYS
+from apm_cli.hook_contract import walk_hook_commands
 from apm_cli.integration.base_integrator import BaseIntegrator, IntegrationResult
 from apm_cli.integration.hook_bundle import (
-    _hook_source_root,
     copy_deployed_hook_bundle,
     iter_deployable_hook_bundle_files,
 )
@@ -95,6 +90,13 @@ from apm_cli.integration.hook_ownership import (
 )
 from apm_cli.integration.hook_ownership import (
     reinject_apm_source_from_sidecar as _reinject_apm_source_from_sidecar,
+)
+from apm_cli.integration.hook_source_selection import (
+    HookSourceSelection,
+    _parse_hook_json,
+    _referenced_hook_source_files,
+    _resolve_relative_hook_script,
+    select_hook_sources,
 )
 from apm_cli.utils.atomic_io import atomic_write_text
 from apm_cli.utils.console import _rich_warning
@@ -142,31 +144,6 @@ class HookTargetReconcileStats(TypedDict):
     errors: int
     failed_targets: list[str]
     failed_paths: list[str]
-
-
-@dataclass(frozen=True)
-class HookSourceSelection:
-    """Authorized hook descriptors and bundle assets grouped by target."""
-
-    descriptor_files: dict[str, frozenset[Path]]
-    bundle_files: dict[str, frozenset[Path]]
-
-    def descriptors_for(self, target_name: str) -> list[Path]:
-        """Return target-routed descriptors in stable path order."""
-        return sorted(self.descriptor_files.get(target_name, frozenset()))
-
-    def bundle_for(self, target_name: str) -> frozenset[Path]:
-        """Return target-materialized bundle assets."""
-        return self.bundle_files.get(target_name, frozenset())
-
-    @property
-    def files(self) -> frozenset[Path]:
-        """Return the multi-target union of every selected source file."""
-        return frozenset(
-            path
-            for selected in (*self.descriptor_files.values(), *self.bundle_files.values())
-            for path in selected
-        )
 
 
 @dataclass(frozen=True)
@@ -392,37 +369,6 @@ _MERGE_HOOK_TARGETS: dict[str, _MergeHookConfig] = {
 _APM_HOOKS_SIDECAR = "apm-hooks.json"
 
 
-def _relative_hook_script_bases(
-    package_path: Path,
-    hook_file_dir: Path | None,
-) -> list[Path]:
-    """Return candidate bases for resolving a relative hook script path."""
-    bases: list[Path] = []
-    if hook_file_dir is not None:
-        bases.append(hook_file_dir)
-    if package_path not in bases:
-        bases.append(package_path)
-    return bases
-
-
-def _resolve_relative_hook_script(
-    package_path: Path,
-    hook_file_dir: Path | None,
-    rel_path: str,
-) -> Path | None:
-    """Resolve a relative hook script path without escaping the package."""
-    last_candidate: Path | None = None
-    for base in _relative_hook_script_bases(package_path, hook_file_dir):
-        try:
-            candidate = ensure_path_within(base / rel_path, package_path)
-        except PathTraversalError:
-            continue
-        last_candidate = candidate
-        if candidate.exists() and candidate.is_file():
-            return candidate
-    return last_candidate
-
-
 class HookIntegrator(BaseIntegrator):
     """Handles integration of APM package hooks into target locations.
 
@@ -591,46 +537,18 @@ class HookIntegrator(BaseIntegrator):
         discovered_files = (
             hook_files if hook_files is not None else integrator.find_hook_files(package_path)
         )
-        all_descriptors = set(discovered_files)
-        descriptors_by_target: dict[str, frozenset[Path]] = {}
-        bundles_by_target: dict[str, frozenset[Path]] = {}
-        supported_targets = {"copilot", "kiro", *_MERGE_HOOK_TARGETS}
-
-        for target_name in dict.fromkeys(target_names):
-            if target_name not in supported_targets:
-                continue
-            descriptors = _filter_hook_files_for_target(
-                discovered_files,
-                target_name,
-                package_name=package_name,
-                package_identity=package_identity,
-                warned_packages=warned_packages,
-            )
-            descriptors_by_target[target_name] = frozenset(descriptors)
-            source_roots: set[Path] = set()
-            for hook_file in descriptors:
-                data = integrator._parse_hook_json(hook_file)
-                if data is None:
-                    continue
-                for source_file in integrator._referenced_hook_source_files(
-                    data,
-                    package_path,
-                    hook_file.parent,
-                ):
-                    source_roots.add(_hook_source_root(package_path, hook_file.parent, source_file))
-
-            bundle_files: set[Path] = set()
-            for source_root in sorted(source_roots):
-                bundle_files.update(
-                    iter_deployable_hook_bundle_files(
-                        source_root,
-                        descriptor_files=all_descriptors,
-                        exclude_json_files=target_name == "copilot",
-                    )
-                )
-            bundles_by_target[target_name] = frozenset(bundle_files)
-
-        return HookSourceSelection(descriptors_by_target, bundles_by_target)
+        return select_hook_sources(
+            package_path,
+            target_names,
+            package_name=package_name,
+            package_identity=package_identity,
+            warned_packages=warned_packages,
+            hook_files=discovered_files,
+            parse_hook_json=integrator._parse_hook_json,
+            filter_hook_files=_filter_hook_files_for_target,
+            iter_bundle_files=iter_deployable_hook_bundle_files,
+            merge_target_names=_MERGE_HOOK_TARGETS,
+        )
 
     def select_hook_sources_for_target(
         self,
@@ -654,81 +572,14 @@ class HookIntegrator(BaseIntegrator):
 
     @staticmethod
     def _referenced_hook_source_files(
-        data: dict,
-        package_path: Path,
-        hook_file_dir: Path,
+        data: dict, package_path: Path, hook_file_dir: Path
     ) -> set[Path]:
         """Resolve existing package files referenced by a parsed hook document."""
-        source_files: set[Path] = set()
-        for declaration in walk_hook_commands(data):
-            command = normalize_quoted_plugin_root(declaration.command)
-            for match in iter_plugin_root_paths(command):
-                try:
-                    source_file = ensure_path_within(
-                        package_path / plugin_root_relative_path(match.group(1)),
-                        package_path,
-                    )
-                except PathTraversalError:
-                    continue
-                if source_file.is_file():
-                    source_files.add(source_file)
-            for match in iter_relative_script_paths(command):
-                source_file = _resolve_relative_hook_script(
-                    package_path,
-                    hook_file_dir,
-                    match.group(1)[2:].replace("\\", "/"),
-                )
-                if source_file is not None and source_file.is_file():
-                    source_files.add(source_file)
-        return source_files
+        return _referenced_hook_source_files(data, package_path, hook_file_dir)
 
     def _parse_hook_json(self, hook_file: Path) -> dict | None:
-        """Parse a hook JSON file and return the data dict.
-
-        Accepts both the wrapped format (``{"hooks": {EventName: [...]}}``)
-        and the "naked" Claude-settings hooks-slice format
-        (``{EventName: [...], ...}`` with no outer ``"hooks":`` wrap).
-        The naked shape is what Claude Code accepts inside its own
-        ``settings.json`` and is a common authoring pattern -- silently
-        dropping it produced the empty merge reported in microsoft/apm#1499.
-
-        Args:
-            hook_file: Path to the hook JSON file
-
-        Returns:
-            Optional[Dict]: Parsed JSON dict (always wrapped), or None if invalid
-        """
-        try:
-            with open(hook_file, encoding="utf-8") as f:
-                data = json.load(f)
-            if not isinstance(data, dict):
-                return None
-            # Normalise naked-format files (no outer "hooks" key but
-            # every top-level value is a list of matcher entries) into
-            # the wrapped shape downstream code expects.  Only promote
-            # when ALL values look like hook entry arrays -- a stray
-            # scalar (e.g. "description") would mean this is malformed
-            # rather than naked, so leave it alone.
-            if "hooks" not in data and data and all(isinstance(v, list) for v in data.values()):
-                _log.debug(
-                    "Promoted naked-format hook file %s (top-level event keys: %s) to wrapped shape",
-                    hook_file,
-                    sorted(data.keys()),
-                )
-                data = {"hooks": data}
-            # Fail closed on malformed shapes where "hooks" is present but not
-            # a dict (e.g. {"hooks": []}).  Downstream code calls .items() on
-            # this value and would otherwise raise AttributeError mid-merge.
-            if "hooks" in data and not isinstance(data["hooks"], dict):
-                _log.warning(
-                    "Skipping malformed hook file %s: 'hooks' must be a dict, got %s",
-                    hook_file,
-                    type(data["hooks"]).__name__,
-                )
-                return None
-            return data
-        except (json.JSONDecodeError, OSError):
-            return None
+        """Parse a hook document and normalize a supported naked hook slice."""
+        return _parse_hook_json(hook_file, logger=_log)
 
     @staticmethod
     def _project_scoped_command_path(
