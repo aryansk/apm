@@ -8,12 +8,33 @@ because it happens to be scanned.
 
 from __future__ import annotations
 
+import os
+from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from apm_cli.models.dependency.subsets import skill_subset_filter_tokens
+from apm_cli.utils.path_security import PathTraversalError, ensure_path_within_resolved
 from apm_cli.utils.paths import portable_relpath
+
+
+def _is_safe_source_path(path: Path, source_root: Path) -> bool:
+    """Return whether a source candidate stays in the real package tree."""
+    try:
+        relative = path.relative_to(source_root)
+    except ValueError:
+        return False
+    current = source_root
+    for part in relative.parts:
+        current /= part
+        if current.is_symlink():
+            return False
+    try:
+        ensure_path_within_resolved(path, source_root)
+    except (OSError, PathTraversalError, RuntimeError):
+        return False
+    return True
 
 
 @dataclass(frozen=True)
@@ -37,48 +58,64 @@ class DeployableSourcePlan:
         plugin_bin_deployable: bool = False,
     ) -> DeployableSourcePlan:
         """Build the authorized deploy set after all deployment gates resolve."""
-        source_root = Path(package_info.install_path)
+        source_root = Path(package_info.install_path).resolve()
         paths: set[str] = set()
         selected_skill_names: frozenset[str] | None = None
         target_primitives = {primitive for target in targets for primitive in target.primitives}
 
         def add_file(path: Path) -> None:
-            if path.is_file() and not path.is_symlink():
+            if _is_safe_source_path(path, source_root) and path.is_file():
                 paths.add(portable_relpath(path, source_root))
 
-        def add_tree(root: Path) -> None:
-            if not root.is_dir() or root.is_symlink():
+        def tree_files(root: Path) -> Iterator[Path]:
+            if not _is_safe_source_path(root, source_root) or not root.is_dir():
                 return
-            for path in root.rglob("*"):
+            for parent, directory_names, file_names in os.walk(root, followlinks=False):
+                parent_path = Path(parent)
+                directory_names[:] = [
+                    name
+                    for name in directory_names
+                    if _is_safe_source_path(parent_path / name, source_root)
+                ]
+                yield from (parent_path / name for name in file_names)
+
+        def add_tree(root: Path) -> None:
+            for path in tree_files(root):
                 add_file(path)
+
+        def add_matching_files(root: Path, pattern: str) -> None:
+            for path in tree_files(root):
+                if path.match(pattern):
+                    add_file(path)
+
+        def add_direct_matching_files(root: Path, pattern: str) -> None:
+            if not _is_safe_source_path(root, source_root) or not root.is_dir():
+                return
+            for path in root.iterdir():
+                if path.match(pattern):
+                    add_file(path)
 
         if "prompts" in target_primitives or "commands" in target_primitives:
-            for path in source_root.glob("*.prompt.md"):
-                add_file(path)
-            for path in (source_root / ".apm" / "prompts").rglob("*.prompt.md"):
-                add_file(path)
+            add_direct_matching_files(source_root, "*.prompt.md")
+            add_matching_files(source_root / ".apm" / "prompts", "*.prompt.md")
 
         if "agents" in target_primitives:
-            for path in source_root.glob("*.agent.md"):
-                add_file(path)
-            for path in (source_root / ".apm" / "agents").rglob("*.md"):
-                add_file(path)
+            add_direct_matching_files(source_root, "*.agent.md")
+            add_matching_files(source_root / ".apm" / "agents", "*.md")
 
         if "instructions" in target_primitives:
-            for path in (source_root / ".apm" / "instructions").rglob("*.instructions.md"):
-                add_file(path)
+            add_matching_files(source_root / ".apm" / "instructions", "*.instructions.md")
 
         if hooks_approved and "hooks" in target_primitives:
             for root in (source_root / ".apm" / "hooks", source_root / "hooks"):
-                for path in root.glob("*.json"):
-                    add_file(path)
+                add_direct_matching_files(root, "*.json")
 
         if canvas_approved and "canvas" in target_primitives:
             add_tree(source_root / ".apm" / "extensions")
 
         if "skills" in target_primitives:
             source_skill = source_root / "SKILL.md"
-            if source_skill.is_file():
+            if _is_safe_source_path(source_skill, source_root) and source_skill.is_file():
                 add_file(source_skill)
                 for root in ("assets", "references", "scripts"):
                     add_tree(source_root / root)
@@ -88,12 +125,13 @@ class DeployableSourcePlan:
             selected = skill_subset_filter_tokens(skill_subset)
             selected_skill_names = frozenset(selected) if selected is not None else None
             for skills_root in (source_root / "skills", source_root / ".apm" / "skills"):
-                if not skills_root.is_dir():
+                if not _is_safe_source_path(skills_root, source_root) or not skills_root.is_dir():
                     continue
                 for skill_dir in skills_root.iterdir():
                     if (
-                        skill_dir.is_dir()
-                        and not skill_dir.is_symlink()
+                        _is_safe_source_path(skill_dir, source_root)
+                        and skill_dir.is_dir()
+                        and _is_safe_source_path(skill_dir / "SKILL.md", source_root)
                         and (skill_dir / "SKILL.md").is_file()
                         and (selected is None or skill_dir.name in selected)
                     ):
@@ -119,6 +157,9 @@ class DeployableSourcePlan:
         ignored: list[str] = []
         for name in contents:
             candidate = current / name
+            if not _is_safe_source_path(candidate, self.source_root):
+                ignored.append(name)
+                continue
             relative = portable_relpath(candidate, self.source_root)
             if self.includes(relative) or any(
                 path.startswith(f"{relative}/") for path in self.paths

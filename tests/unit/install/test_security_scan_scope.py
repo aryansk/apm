@@ -155,3 +155,26 @@ def test_primitive_discovery_excludes_symlink_sources_from_plan(
     files = getattr(integrator_type(), finder_name)(tmp_path, plan)
 
     assert files == [deployable]
+
+
+@pytest.mark.parametrize("symlink_root", ("skills", ".apm/skills"))
+def test_symlinked_skill_roots_are_not_traversed(tmp_path: Path, symlink_root: str) -> None:
+    """A symlinked skill discovery root cannot admit external package content."""
+    package_root = tmp_path / "package"
+    external_skill = tmp_path / "external" / "selected"
+    external_skill.mkdir(parents=True)
+    (external_skill / "SKILL.md").write_text("external\n", encoding="utf-8")
+    root = package_root / symlink_root
+    root.parent.mkdir(parents=True, exist_ok=True)
+    root.symlink_to(external_skill.parent, target_is_directory=True)
+
+    plan = DeployableSourcePlan.create(
+        _package(package_root),
+        [_skill_target()],
+        skill_subset=("selected",),
+        hooks_approved=False,
+        canvas_approved=False,
+        skip_bin=True,
+    )
+
+    assert plan.paths == frozenset()

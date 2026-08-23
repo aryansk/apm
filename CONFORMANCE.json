@@ -1182,8 +1182,9 @@
       "keyword": "MUST",
       "section": "10.16",
       "status": "active",
-      "test_count": 2,
+      "test_count": 3,
       "tests": [
+        "tests/spec_conformance/test_manifest_reqs.py::test_authorized_source_plan_fixture_oracle_covers_symlinked_content",
         "tests/spec_conformance/test_manifest_reqs.py::test_authorized_source_plan_limits_scanning_and_skill_materialization",
         "tests/spec_conformance/test_manifest_reqs.py::test_authorized_source_plan_requirement_covers_reintegration_and_symlinks"
       ]

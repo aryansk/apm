@@ -14,6 +14,7 @@ they exercise in a header comment.
 | `lockfile/`                              | `apm.lock.yaml` fixtures including v1, v2, round-trip.      |
 | `policy/`                                | `apm-policy.yml` fixtures (valid + invalid).                |
 | `resolution/semver-dialect.json`         | Canonical semver-range -> tag-set table per req-rs-007.     |
+| `source-plan/req-sc-015.json`            | Authorized-source-plan fixture and symlink-exclusion oracle.|
 
 ## Binding to the spec
 
