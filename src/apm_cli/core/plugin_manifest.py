@@ -415,13 +415,13 @@ def write_plugin_manifest_with_outcome(
     **Overwrite policy.** If a ``plugin.json`` already exists at the target
     path it is preserved unless *force* is set (threaded from ``apm pack
     --force``). Without ``--force`` the function emits a warning and skips the
-    write, returning ``None`` -- this mirrors the collision contract the rest
+    write with a ``"skipped"`` result -- this mirrors the collision contract the rest
     of ``apm pack`` already honours and prevents a compromised ``.mcp.json``
     from silently replacing a hand-audited file. With ``--force`` the existing
     file is overwritten and a warning records the replacement.
 
-    In dry-run mode the function logs what *would* be written and returns
-    ``None`` without touching the filesystem.
+    In dry-run mode the function logs what *would* be written and returns a
+    ``"dry_run"`` result without touching the filesystem.
 
     The result distinguishes a real write, a protected existing file, and a
     dry-run preview so callers can report the same decision without inferring it
