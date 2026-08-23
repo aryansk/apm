@@ -290,6 +290,18 @@ class TestPackCmd:
         assert envelope2["plugin_manifests"]["dry_run"] == []
         assert out.read_text(encoding="utf-8") == preserved
 
+        forced_dry_run = runner.invoke(
+            pack_cmd, ["--claude-plugin", "--force", "--dry-run", "--json"]
+        )
+        assert forced_dry_run.exit_code == 0
+        forced_dry_run_start = forced_dry_run.output.find("{")
+        assert forced_dry_run_start >= 0, f"No JSON found in output: {forced_dry_run.output!r}"
+        forced_dry_run_envelope = json_mod.loads(forced_dry_run.output[forced_dry_run_start:])
+        assert forced_dry_run_envelope["plugin_manifests"]["written"] == []
+        assert forced_dry_run_envelope["plugin_manifests"]["skipped"] == []
+        assert forced_dry_run_envelope["plugin_manifests"]["dry_run"] == [str(out)]
+        assert out.read_text(encoding="utf-8") == preserved
+
     def test_pack_marketplace_output_flag_removed(self, runner, tmp_path, monkeypatch):
         """The legacy --marketplace-output flag was removed in favour of --marketplace-path."""
         monkeypatch.chdir(tmp_path)
