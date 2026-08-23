@@ -45,6 +45,7 @@ def _make_target(
     scoped.compile_family = compile_family
     scoped.resolved_deploy_root = deploy_root
     scoped.root_dir = f".{name}"
+    scoped.include_scoped_in_user_root_context = False
 
     if for_scope_returns is _UNSET:
         target.for_scope = MagicMock(return_value=scoped)
@@ -213,6 +214,7 @@ class TestSkippedNoInstructions:
         (source_root / "apm_modules").mkdir(parents=True)
         deploy_root = tmp_path / ".config" / "opencode"
         target = _make_target("opencode", "agents", deploy_root=deploy_root)
+        target.for_scope.return_value.include_scoped_in_user_root_context = True
         instr = _make_instruction("python", apply_to="**/*.py", content="Use hints")
         primitives = MagicMock()
         primitives.instructions = [instr]
@@ -224,7 +226,27 @@ class TestSkippedNoInstructions:
             result = compile_user_root_contexts([target], source_root)
 
         assert result[0].status == "written"
-        assert "Use hints" in (deploy_root / "AGENTS.md").read_text()
+        content = (deploy_root / "AGENTS.md").read_text()
+        assert "## Files matching `**/*.py`" in content
+        assert "Use hints" in content
+
+    def test_control_target_excludes_scoped_instructions(self, tmp_path):
+        """Targets without the profile policy retain the global-only contract."""
+        from apm_cli.compilation.user_root_context import compile_user_root_contexts
+
+        source_root = tmp_path / "source"
+        (source_root / "apm_modules").mkdir(parents=True)
+        target = _make_target("claude", "claude", deploy_root=tmp_path / ".claude")
+        primitives = MagicMock()
+        primitives.instructions = [_make_instruction("python", apply_to="**/*.py")]
+
+        with patch(
+            "apm_cli.primitives.discovery.discover_primitives",
+            return_value=primitives,
+        ):
+            result = compile_user_root_contexts([target], source_root)
+
+        assert result[0].status == "skipped-no-instructions"
 
 
 # ---------------------------------------------------------------------------

@@ -105,7 +105,7 @@ in `references/`; keep `SKILL.md` to the always-relevant flow.
 | `cursor`          | `.agents/skills/<name>/SKILL.md`             |
 | `codex`           | `.agents/skills/<name>/SKILL.md`             |
 | `gemini`          | `.agents/skills/<name>/SKILL.md`             |
-| `opencode`        | `.agents/skills/<name>/SKILL.md`             |
+| `opencode`        | `.agents/skills/<name>/SKILL.md` (project), `~/.config/opencode/skills/<name>/SKILL.md` (user) |
 | `windsurf`        | `.agents/skills/<name>/SKILL.md`             |
 | `agent-skills`    | `.agents/skills/<name>/SKILL.md` (explicit)  |
 

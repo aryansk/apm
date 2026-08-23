@@ -117,6 +117,28 @@ def local_package(tmp_path):
     return pkg
 
 
+@pytest.fixture
+def opencode_package(tmp_path):
+    """Create a local package with global and scoped instructions plus a skill."""
+    pkg = tmp_path / "opencode-package"
+    pkg.mkdir()
+    (pkg / "apm.yml").write_text("name: opencode-package\nversion: 1.0.0\n", encoding="utf-8")
+    instructions = pkg / ".apm" / "instructions"
+    instructions.mkdir(parents=True)
+    (instructions / "global.instructions.md").write_text(
+        "---\ndescription: Global marker\n---\nGLOBAL_OPENCODE_MARKER\n",
+        encoding="utf-8",
+    )
+    (instructions / "python.instructions.md").write_text(
+        "---\napplyTo: '**/*.py'\ndescription: Python marker\n---\nSCOPED_OPENCODE_MARKER\n",
+        encoding="utf-8",
+    )
+    skill = pkg / ".apm" / "skills" / "reviewer"
+    skill.mkdir(parents=True)
+    (skill / "SKILL.md").write_text("# Reviewer\n", encoding="utf-8")
+    return pkg
+
+
 # ---------------------------------------------------------------------------
 # User-scope directory creation
 # ---------------------------------------------------------------------------
@@ -451,6 +473,63 @@ class TestGlobalGeminiScope:
         )
         combined = result.stdout + result.stderr
         assert "user scope" in combined.lower(), f"Uninstall did not run in user scope: {combined}"
+
+
+class TestGlobalOpenCodeScope:
+    """Verify the native OpenCode user-scope lifecycle through the installed CLI."""
+
+    def test_opencode_skill_and_scoped_instruction_lifecycle(
+        self, apm_binary_path, fake_home, opencode_package
+    ):
+        """OpenCode uses native paths without taking ownership of other roots."""
+        opencode_root = fake_home / ".config" / "opencode"
+        opencode_root.mkdir(parents=True)
+        claude_root = fake_home / ".claude"
+        claude_root.mkdir()
+        foreign_skill = fake_home / ".agents" / "skills" / "foreign" / "SKILL.md"
+        foreign_skill.parent.mkdir(parents=True)
+        foreign_skill.write_text("# Foreign\n", encoding="utf-8")
+
+        install = _run_apm(
+            apm_binary_path,
+            ["install", "--global", str(opencode_package), "--target", "opencode"],
+            fake_home,
+            fake_home,
+        )
+        assert install.returncode == 0, install.stdout + install.stderr
+
+        native_skill = opencode_root / "skills" / "reviewer" / "SKILL.md"
+        assert native_skill.is_file()
+        assert not (fake_home / ".agents" / "skills" / "reviewer" / "SKILL.md").exists()
+
+        compile_result = _run_apm(apm_binary_path, ["compile", "--global"], fake_home, fake_home)
+        assert compile_result.returncode == 0, compile_result.stdout + compile_result.stderr
+        opencode_agents = (opencode_root / "AGENTS.md").read_text(encoding="utf-8")
+        assert "GLOBAL_OPENCODE_MARKER" in opencode_agents
+        assert "## Files matching `**/*.py`" in opencode_agents
+        assert "SCOPED_OPENCODE_MARKER" in opencode_agents
+
+        claude_agents = (claude_root / "CLAUDE.md").read_text(encoding="utf-8")
+        assert "GLOBAL_OPENCODE_MARKER" in claude_agents
+        assert "SCOPED_OPENCODE_MARKER" not in claude_agents
+
+        lock_path = fake_home / ".apm" / "apm.lock"
+        first_lock = lock_path.read_bytes()
+        first_agents = opencode_agents.encode("utf-8")
+        repeat = _run_apm(apm_binary_path, ["compile", "--global"], fake_home, fake_home)
+        assert repeat.returncode == 0, repeat.stdout + repeat.stderr
+        assert lock_path.read_bytes() == first_lock
+        assert (opencode_root / "AGENTS.md").read_bytes() == first_agents
+
+        uninstall = _run_apm(
+            apm_binary_path,
+            ["uninstall", "--global", "opencode-package"],
+            fake_home,
+            fake_home,
+        )
+        assert uninstall.returncode == 0, uninstall.stdout + uninstall.stderr
+        assert not native_skill.exists()
+        assert foreign_skill.read_text(encoding="utf-8") == "# Foreign\n"
 
 
 class TestGlobalUninstallLifecycle:

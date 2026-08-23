@@ -168,7 +168,12 @@ def _hint_global_root_context(ctx: InstallContext) -> None:
     from apm_cli.core.scope import InstallScope, get_apm_dir
 
     source_root = get_apm_dir(InstallScope.USER)
-    if not discover_global_instructions(source_root):
+    include_scoped = any(
+        scoped is not None and scoped.include_scoped_in_user_root_context
+        for target in ctx.targets
+        if (scoped := target.for_scope(user_scope=True)) is not None
+    )
+    if not discover_global_instructions(source_root, include_scoped=include_scoped):
         return
 
     target_names, _ = _compile_hint_targets(ctx, user_scope=True)
@@ -178,7 +183,7 @@ def _hint_global_root_context(ctx: InstallContext) -> None:
     if ctx.logger:
         targets = ", ".join(target_names)
         message = (
-            "Global instructions installed. Run 'apm compile -g' "
+            "Applicable instructions installed. Run 'apm compile -g' "
             f"to update root context files for: {targets}."
         )
         ctx.logger.info(message, symbol="info")

@@ -154,6 +154,7 @@ class TestOpenCodeScopeResolution:
         opencode = KNOWN_TARGETS["opencode"]
         resolved = opencode.for_scope(user_scope=True)
         assert resolved.root_dir == ".config/opencode"
+        assert resolved.include_scoped_in_user_root_context
 
     def test_user_scope_agents_deploy_to_config_opencode(self):
         opencode = KNOWN_TARGETS["opencode"]

@@ -86,8 +86,12 @@ def _finalize_build_id(content: str) -> str:
     return "\n".join(lines) + "\n"
 
 
-def _generate_content(instructions: list[Instruction]) -> str:
-    """Generate the root context file content from a list of global instructions.
+def _generate_content(
+    instructions: list[Instruction],
+    *,
+    preserve_scoped_sections: bool = False,
+) -> str:
+    """Generate root context content, retaining scoped sections when supported.
 
     Embeds the APM-generated marker and a deterministic Build ID so that
     subsequent runs can detect APM-owned files and apply overwrite protection.
@@ -104,9 +108,23 @@ def _generate_content(instructions: list[Instruction]) -> str:
         "",
     ]
 
-    for instruction in instructions:
-        sections.append(instruction.content.strip())
-        sections.append("")
+    if preserve_scoped_sections:
+        from .template_builder import render_instructions_block
+
+        def emit(instruction: Instruction) -> list[str]:
+            return [instruction.content.strip(), ""]
+
+        sections.extend(
+            render_instructions_block(
+                instructions,
+                base_dir=Path.cwd(),
+                emit_instruction=emit,
+            )
+        )
+    else:
+        for instruction in instructions:
+            sections.append(instruction.content.strip())
+            sections.append("")
 
     return _finalize_build_id("\n".join(sections))
 
@@ -137,11 +155,7 @@ def discover_global_instructions(
 
     primitives = discover_primitives(str(apm_modules))
     return sorted(
-        [
-            instr
-            for instr in primitives.instructions
-            if include_scoped or not instr.apply_to
-        ],
+        [instr for instr in primitives.instructions if include_scoped or not instr.apply_to],
         key=lambda instr: str(instr.file_path),
     )
 
@@ -199,9 +213,7 @@ def compile_user_root_contexts(
         )
         return results
 
-    all_instructions = discover_global_instructions(
-        source_root, logger=log, include_scoped=True
-    )
+    all_instructions = discover_global_instructions(source_root, logger=log, include_scoped=True)
     global_instructions = [instr for instr in all_instructions if not instr.apply_to]
 
     for target in targets:
@@ -220,9 +232,8 @@ def compile_user_root_contexts(
             )
             continue
 
-        target_instructions = (
-            all_instructions if scoped.name == "opencode" else global_instructions
-        )
+        preserve_scoped_sections = scoped.include_scoped_in_user_root_context
+        target_instructions = all_instructions if preserve_scoped_sections else global_instructions
         if not target_instructions:
             log.debug(
                 "user_root_context: no applicable instructions found in %s -- skipping %s",
@@ -243,7 +254,10 @@ def compile_user_root_contexts(
             )
             continue
 
-        content = _generate_content(target_instructions)
+        content = _generate_content(
+            target_instructions,
+            preserve_scoped_sections=preserve_scoped_sections,
+        )
 
         # -- overwrite protection --
         if output_path.exists():

@@ -116,7 +116,8 @@ GitHub Copilot (CLI and IDE).
   - instructions: `.github/instructions/<name>.instructions.md`
   - prompts: `.github/prompts/<name>.prompt.md`
   - agents: `.github/agents/<name>.agent.md`
-  - skills: `.agents/skills/<name>/SKILL.md`
+  - skills: `.agents/skills/<name>/SKILL.md` at project scope and
+    `~/.config/opencode/skills/<name>/SKILL.md` at user scope
   - hooks: `.github/hooks/<name>.json`
   - generated: `.github/copilot-instructions.md` (compile output)
 - **User scope.** Partial. `prompts` deploy under `~/.copilot/prompts/`;
@@ -217,7 +218,8 @@ OpenCode.
   - skills: `.agents/skills/<name>/SKILL.md`
 - **Caveat.** OpenCode has no hooks concept; the `hooks` primitive is silently skipped for this target.
 - **Global compile.** `apm compile -g` writes
-  `~/.config/opencode/AGENTS.md` from global instructions.
+  `~/.config/opencode/AGENTS.md`. OpenCode also retains `applyTo` sections
+  in that generated file; other user-root targets compile only global instructions.
 
 ## windsurf
 
