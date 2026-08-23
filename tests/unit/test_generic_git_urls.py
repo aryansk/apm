@@ -59,10 +59,30 @@ class TestGitLabHTTPS:
         assert dep.host == "gitlab.com"
         assert dep.repo_url == "acme/coding-standards"
 
-    def test_gitlab_deep_subgroup_named_primitive_with_git_suffix(self):
-        dep = DependencyReference.parse("https://gitlab.com/ai/collections/core.git")
+    @pytest.mark.parametrize(
+        "url",
+        (
+            "https://gitlab.com/ai/platform/collections/core.git",
+            "git@gitlab.com:ai/platform/collections/core.git",
+        ),
+    )
+    def test_gitlab_deep_subgroup_named_primitive_with_git_suffix(self, url):
+        dep = DependencyReference.parse(url)
         assert dep.host == "gitlab.com"
-        assert dep.repo_url == "ai/collections/core"
+        assert dep.repo_url == "ai/platform/collections/core"
+
+    @pytest.mark.parametrize(
+        "url",
+        (
+            "https://code.example.invalid/ai/platform/collections/core.git",
+            "git@code.example.invalid:ai/platform/collections/core.git",
+        ),
+    )
+    def test_object_gitlab_type_allows_deep_primitive_namespace(self, url):
+        dep = DependencyReference.parse_from_dict({"git": url, "type": "gitlab"})
+        assert dep.host == "code.example.invalid"
+        assert dep.host_type == "gitlab"
+        assert dep.repo_url == "ai/platform/collections/core"
 
     def test_gitlab_https_url_with_ref(self):
         dep = DependencyReference.parse("https://gitlab.com/acme/coding-standards.git#v2.0")
@@ -1355,6 +1375,20 @@ class TestEmbeddedSubpathInGitUrl:
             DependencyReference.parse_from_dict(
                 {"git": "git@github.com:org/repo/skills/hello-world.git"}
             )
+
+    @pytest.mark.parametrize(
+        "url",
+        (
+            "https://github.com/org/repo/collections/core.git",
+            "git@github.com:org/repo/collections/core.git",
+            "ssh://git@github.com/org/repo/collections/core.git",
+            "https://gitlab.com/ai/platform/core.git/collections/security",
+        ),
+    )
+    def test_explicit_primitive_tail_raises_for_fixed_or_git_boundary(self, url) -> None:
+        """A known repository boundary must never permit an embedded primitive tail."""
+        with pytest.raises(ValueError, match=r"A subpath cannot be embedded in a git URL"):
+            DependencyReference.parse(url)
 
     # ------------------------------------------------------------------
     # No-regression cases: supported shapes must still parse fine
