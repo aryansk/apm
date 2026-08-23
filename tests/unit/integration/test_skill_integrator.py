@@ -1188,7 +1188,7 @@ Use when building MCP servers or tools.
         (skill_source / "assets").mkdir()
         (skill_source / "assets" / "config.json").write_text("{}")
 
-        # A source-only custom directory must not bypass the deployable plan.
+        # Custom directories are part of the documented whole-skill bundle.
         (skill_source / "examples").mkdir()
         (skill_source / "examples" / "basic.md").write_text("# Basic Example")
 
@@ -1202,7 +1202,7 @@ Use when building MCP servers or tools.
         assert (github_path / "scripts" / "run.sh").exists()
         assert (github_path / "references" / "guide.md").exists()
         assert (github_path / "assets" / "config.json").exists()
-        assert not (github_path / "examples" / "basic.md").exists()
+        assert (github_path / "examples" / "basic.md").exists()
 
     # ========== Test T6: Skill name validation is applied ==========
 
@@ -1268,9 +1268,9 @@ Use when building MCP servers or tools.
         assert "# NEW CONTENT" in skill_content
         assert "# OLD CONTENT" not in skill_content
 
-        # Old and source-only files should not survive the plan-filtered copy.
+        # Reinstall replaces stale files while preserving new bundle resources.
         assert not (skill_dir / "old-file.txt").exists()
-        assert not (skill_dir / "new-file.txt").exists()
+        assert (skill_dir / "new-file.txt").exists()
 
     # ========== Test T6: Packages without SKILL.md are skipped ==========
 

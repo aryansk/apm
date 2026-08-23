@@ -3,6 +3,7 @@
 import json
 import logging
 import shutil
+from collections import defaultdict
 from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
@@ -171,9 +172,17 @@ def copy_deployed_hook_bundle(
         root_has_js_hook.setdefault((source_root, target_root), False)
 
     copy_plan: dict[str, Path] = {}
+    files_by_ancestor: dict[Path, list[Path]] = defaultdict(list)
+    for source_file in selected_bundle_files:
+        current = source_file.parent
+        while current.is_relative_to(package_path):
+            files_by_ancestor[current].append(source_file)
+            if current == package_path:
+                break
+            current = current.parent
     for source_root, target_root in source_target_roots:
-        for source_file in selected_bundle_files:
-            if source_file in descriptor_files or not source_file.is_relative_to(source_root):
+        for source_file in files_by_ancestor.get(source_root, ()):
+            if source_file in descriptor_files:
                 continue
             if source_plan is not None and not source_plan.includes(
                 portable_relpath(source_file, source_plan.source_root)

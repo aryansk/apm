@@ -119,8 +119,8 @@ class TestPreDeploySecurityScan:
         assert logger.error.call_count == 1
         assert logger.error_detail.call_count == 2
         messages = [call.args[0] for call in logger.error_detail.call_args_list]
-        assert any("Inspect source now" in message for message in messages)
-        assert any("Use --force" in message for message in messages)
+        assert any("Fix the reported file(s)" in message for message in messages)
+        assert any("Use --force only after reviewing" in message for message in messages)
 
     def test_no_logger_calls_when_logger_is_none(self, tmp_path: Path) -> None:
         """When logger=None, no AttributeError is raised."""

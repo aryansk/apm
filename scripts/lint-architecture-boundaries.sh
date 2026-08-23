@@ -298,6 +298,7 @@ bin_deploy_duplicate_hits=$(
 )
 if [ "$bin_deploy_definition_count" -ne 1 ] \
     || ! grep -Fq 'plugin_bin_deployable as _plugin_bin_deployable' src/apm_cli/install/services.py \
+    || ! grep -Fq 'from apm_cli.install.exec_gate import plugin_bin_deployable' src/apm_cli/integration/skill_integrator.py \
     || [ -n "$bin_deploy_duplicate_hits" ]; then
     echo "[x] Plugin bin deployment eligibility must route through install/exec_gate.py"
     [ -n "$bin_deploy_duplicate_hits" ] && echo "$bin_deploy_duplicate_hits"

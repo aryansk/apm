@@ -696,6 +696,7 @@ def test_deployable_source_paths_have_single_authorized_plan() -> None:
     assert "paths=source_plan.paths" in scanner
     assert "source_plan=source_plan" in services
     assert "source_plan.copy_ignore" in skills
+    assert "from apm_cli.install.exec_gate import plugin_bin_deployable" in skills
     assert "HookIntegrator.select_deployable_hook_sources" in owner
     assert "CanvasIntegrator.find_canvas_bundles" in owner
     assert (

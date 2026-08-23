@@ -14,6 +14,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from apm_cli.install.cache_pin import MARKER_FILENAME
 from apm_cli.models.dependency.subsets import skill_subset_filter_tokens
 from apm_cli.utils.path_security import PathTraversalError, ensure_path_within_resolved
 from apm_cli.utils.paths import portable_relpath
@@ -46,6 +47,7 @@ class DeployableSourcePlan:
     selected_skill_names: frozenset[str] | None = None
     authorized_parent_prefixes: frozenset[str] = frozenset()
     hook_source_selection: Any | None = None
+    plugin_bin_deployable: bool = False
 
     def __post_init__(self) -> None:
         """Index authorized parents for constant-time copy filtering."""
@@ -145,18 +147,27 @@ class DeployableSourcePlan:
         if "skills" in target_primitives:
             source_skill = source_root / "SKILL.md"
             if _is_safe_source_path(source_skill, source_root) and source_skill.is_file():
-                add_file(source_skill)
-                for root in ("assets", "references", "scripts"):
-                    add_tree(source_root / root)
-                if not skip_bin:
-                    add_tree(source_root / "bin")
+                for path in tree_files(source_root):
+                    relative = path.relative_to(source_root)
+                    if (
+                        relative.parts[0] == ".apm"
+                        or path.name == MARKER_FILENAME
+                        or (skip_bin and relative.parts[0] == "bin")
+                    ):
+                        continue
+                    add_file(path)
 
             selected = skill_subset_filter_tokens(skill_subset)
             selected_skill_names = frozenset(selected) if selected is not None else None
             for skills_root in (source_root / "skills", source_root / ".apm" / "skills"):
                 if not _is_safe_source_path(skills_root, source_root) or not skills_root.is_dir():
                     continue
-                for skill_dir in skills_root.iterdir():
+                candidates = (
+                    (skills_root / name for name in sorted(selected))
+                    if selected is not None
+                    else skills_root.iterdir()
+                )
+                for skill_dir in candidates:
                     if (
                         _is_safe_source_path(skill_dir, source_root)
                         and skill_dir.is_dir()
@@ -164,7 +175,11 @@ class DeployableSourcePlan:
                         and (skill_dir / "SKILL.md").is_file()
                         and (selected is None or skill_dir.name in selected)
                     ):
-                        add_tree(skill_dir)
+                        for path in tree_files(skill_dir):
+                            relative = path.relative_to(skill_dir)
+                            if skip_bin and relative.parts[0] == "bin":
+                                continue
+                            add_file(path)
 
         if plugin_bin_deployable:
             add_tree(source_root / "bin")
@@ -175,6 +190,7 @@ class DeployableSourcePlan:
             paths=frozenset(paths),
             selected_skill_names=selected_skill_names,
             hook_source_selection=hook_source_selection,
+            plugin_bin_deployable=plugin_bin_deployable,
         )
 
     def includes(self, relative_path: str) -> bool:

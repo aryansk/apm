@@ -478,6 +478,39 @@ def test_uninstall_reintegrates_surviving_hook_without_source_only_asset(
     assert not hostile_target.exists()
 
 
+def test_prune_refuses_hostile_survivor_before_hook_rebuild(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Prune cannot write a survivor that became hostile after install."""
+    project = tmp_path / "proj-hostile-prune-survivor"
+    _write_project(project, ["acme/survivor", "acme/to-prune"], ["claude"])
+    install_result = _run_install(
+        project,
+        monkeypatch,
+        {
+            "acme/survivor": "./run.sh",
+            "acme/to-prune": "./removed.sh",
+        },
+        hook_assets={
+            "acme/survivor": {".apm/hooks/run.sh": "#!/bin/sh\necho clean\n"},
+            "acme/to-prune": {".apm/hooks/removed.sh": "#!/bin/sh\necho removed\n"},
+        },
+    )
+    assert install_result.exit_code == 0, install_result.output
+    deployed = project / ".claude" / "hooks" / "survivor" / "run.sh"
+    assert deployed.read_text(encoding="utf-8") == "#!/bin/sh\necho clean\n"
+
+    source = project / "apm_modules" / "acme" / "survivor" / ".apm" / "hooks" / "run.sh"
+    source.write_text("#!/bin/sh\necho hostile \u202e\n", encoding="utf-8")
+    _remove_dependency(project, "acme/to-prune")
+
+    prune_result = _run_prune(project, monkeypatch)
+
+    assert prune_result.exit_code == 0, prune_result.output
+    assert "Hook reconciliation failed" in prune_result.output
+    assert deployed.read_text(encoding="utf-8") == "#!/bin/sh\necho clean\n"
+
+
 def test_prune_hook_reconciliation_is_idempotent(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

@@ -99,6 +99,51 @@ def test_source_only_hidden_character_is_not_in_authorized_scan(tmp_path: Path) 
     assert _pre_deploy_security_scan(plan, DiagnosticCollector(), package_name="clean") is True
 
 
+def test_root_skill_plan_preserves_arbitrary_files_but_excludes_internal_content(
+    tmp_path: Path,
+) -> None:
+    """A root skill keeps its documented whole-directory contract."""
+    (tmp_path / "SKILL.md").write_text("# Skill\n", encoding="utf-8")
+    (tmp_path / "examples").mkdir()
+    (tmp_path / "examples" / "basic.md").write_text("example\n", encoding="utf-8")
+    (tmp_path / "new-file.txt").write_text("resource\n", encoding="utf-8")
+    (tmp_path / "bin").mkdir()
+    (tmp_path / "bin" / "tool").write_text("executable\n", encoding="utf-8")
+    (tmp_path / ".apm" / "agents").mkdir(parents=True)
+    (tmp_path / ".apm" / "agents" / "internal.md").write_text("internal\n", encoding="utf-8")
+
+    plan = DeployableSourcePlan.create(
+        _package(tmp_path),
+        [_skill_target()],
+        skill_subset=None,
+        hooks_approved=False,
+        canvas_approved=False,
+        skip_bin=True,
+    )
+
+    assert plan.paths == frozenset({"SKILL.md", "examples/basic.md", "new-file.txt"})
+
+
+def test_nested_skill_plan_excludes_unapproved_bin(tmp_path: Path) -> None:
+    """A nested skill's denied executable cannot enter the scan plan."""
+    skill = tmp_path / "skills" / "selected"
+    (skill / "bin").mkdir(parents=True)
+    (skill / "SKILL.md").write_text("clean\n", encoding="utf-8")
+    (skill / "bin" / "tool").write_text("hostile \u202e\n", encoding="utf-8")
+
+    plan = DeployableSourcePlan.create(
+        _package(tmp_path),
+        [_skill_target()],
+        skill_subset=("selected",),
+        hooks_approved=False,
+        canvas_approved=False,
+        skip_bin=True,
+    )
+
+    assert plan.paths == frozenset({"skills/selected/SKILL.md"})
+    assert SecurityGate.scan_files(tmp_path, paths=plan.paths).should_block is False
+
+
 def test_hook_plan_routes_descriptors_before_scanning(tmp_path: Path) -> None:
     """Copilot cannot scan a hostile Claude-only descriptor or its script."""
     hooks_dir = tmp_path / ".apm" / "hooks"

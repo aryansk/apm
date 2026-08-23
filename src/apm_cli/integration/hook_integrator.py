@@ -1954,25 +1954,13 @@ class HookIntegrator(BaseIntegrator):
         user_scope: bool = False,
         lockfile: "LockFile | None" = None,
     ) -> dict:
-        """Reconcile merged-hook ownership after packages leave apm.yml.
-
-        ``_clean_apm_entries_from_json`` strips all ``_apm_source`` entries,
-        so dropping one package requires wiping and rebuilding from installed
-        survivors. This mirrors ``_sync_integrations_after_uninstall`` in
-        ``commands/uninstall/engine.py``, scoped to hooks only.
-
-        Rebuilds from the post-removal lockfile's direct and transitive
-        packages via uninstall Phase 2's survivor set (#2254). Callers may
-        pass that lockfile; otherwise disk is read, falling back to manifest
-        dependencies only when no lockfile is available.
-
-        Re-integration failures are logged and skipped by design.
-        Target scope (#2250): wipe and rebuild use the same resolved targets.
-        ``reconcile_dropped_targets`` separately owns target contraction.
-        """
+        """Securely wipe and rebuild merged hooks from installed survivors."""
         from apm_cli.agent_plugins.errors import preflight_reintegration_survivors
         from apm_cli.constants import APM_MODULES_DIR
         from apm_cli.install.target_filter import resolve_effective_package_targets
+        from apm_cli.integration.hook_reintegration import (
+            build_hook_reintegration_source_plan,
+        )
         from apm_cli.models.apm_package import (
             surviving_dependency_refs_for_reintegration,
         )
@@ -2006,7 +1994,13 @@ class HookIntegrator(BaseIntegrator):
                 None,
                 dep_ref.get_identity(),
             )
-            rebuild_plan.append((dep_ref, pkg_info, target_selection))
+            source_plan = build_hook_reintegration_source_plan(
+                dep_ref,
+                pkg_info,
+                list(target_selection.targets),
+                getattr(apm_package, "allow_executables", None),
+            )
+            rebuild_plan.append((dep_ref, pkg_info, target_selection, source_plan))
 
         # Empty managed_files (not None) skips file-level deletion while
         # still triggering the merged-hook JSON wipe, scoped to the same
@@ -2015,11 +2009,15 @@ class HookIntegrator(BaseIntegrator):
             apm_package, project_root, managed_files=set(), targets=targets
         )
 
-        for dep_ref, pkg_info, target_selection in rebuild_plan:
+        for dep_ref, pkg_info, target_selection, source_plan in rebuild_plan:
             try:
                 for target in target_selection.targets:
                     self.integrate_hooks_for_target(
-                        target, pkg_info, project_root, user_scope=user_scope
+                        target,
+                        pkg_info,
+                        project_root,
+                        user_scope=user_scope,
+                        source_plan=source_plan,
                     )
             except Exception as e:
                 stats["errors"] = stats.get("errors", 0) + 1

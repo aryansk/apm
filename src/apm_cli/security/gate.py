@@ -13,6 +13,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
 
+from ..utils.path_security import PathTraversalError, ensure_path_within, validate_path_segments
 from ..utils.paths import portable_relpath
 from .content_scanner import ContentScanner, ScanFinding
 
@@ -97,9 +98,7 @@ class SecurityGate:
         scanned_files: set[str] = set()
 
         if paths is not None:
-            candidates = (
-                root / relative for relative in sorted(paths) if _is_safe_relative_path(relative)
-            )
+            candidates = (_explicit_scan_candidate(root, relative) for relative in sorted(paths))
             return SecurityGate._scan_candidates(
                 candidates,
                 root,
@@ -297,10 +296,20 @@ def ignore_symlinks(directory: str, contents: list[str]) -> list[str]:
     return [c for c in contents if (Path(directory) / c).is_symlink()]
 
 
-def _is_safe_relative_path(relative: str) -> bool:
-    """Return whether an explicit scan path remains relative to its root."""
+def _explicit_scan_candidate(root: Path, relative: str) -> Path:
+    """Return a contained explicit scan path with no symlinked components."""
     path = Path(relative)
-    return bool(relative) and not path.is_absolute() and ".." not in path.parts
+    if not relative or path.is_absolute():
+        raise PathTraversalError(f"Explicit scan path must be root-relative: {relative!r}")
+    validate_path_segments(relative, context="explicit scan path", reject_empty=True)
+    candidate = root / path
+    current = root
+    for part in path.parts:
+        current /= part
+        if current.is_symlink():
+            raise PathTraversalError(f"Explicit scan path contains a symlink: {relative!r}")
+    ensure_path_within(candidate, root)
+    return candidate
 
 
 def ignore_non_content(directory: str, contents: list[str]) -> list[str]:

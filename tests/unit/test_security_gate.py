@@ -115,6 +115,19 @@ class TestScanFiles:
         assert verdict.should_block is False
         assert verdict.scanned_files == frozenset({"authorized.md"})
 
+    def test_explicit_paths_reject_symlinked_parent_escape(self, tmp_path):
+        outside = tmp_path.parent / f"{tmp_path.name}-outside"
+        outside.mkdir()
+        _write_file(outside / "hostile.md", f"critical {CRITICAL_CHAR}")
+        (tmp_path / "link").symlink_to(outside, target_is_directory=True)
+
+        with pytest.raises(ValueError, match="contains a symlink"):
+            SecurityGate.scan_files(
+                tmp_path,
+                policy=BLOCK_POLICY,
+                paths=frozenset({"link/hostile.md"}),
+            )
+
     def test_report_policy_ignores_critical(self, tmp_path):
         _write_file(tmp_path / "evil.md", f"critical {CRITICAL_CHAR}")
         v = SecurityGate.scan_files(tmp_path, policy=REPORT_POLICY)

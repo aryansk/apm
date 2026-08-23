@@ -153,7 +153,7 @@ Researchers have found hidden Unicode characters embedded in popular shared rule
 During `apm install`, APM resolves the authorized targets, selected skill subset, and executable approvals, then scans only the source files selected for deployment **before** any integrator copies them to target directories. Source-only files are neither scanned nor deployed by this step:
 
 ```
-download → scan source → block or deploy → report
+download -> authorize deploy set -> scan selected files -> block or deploy -> report
 ```
 
 - **Critical findings block deployment.** Nothing reaches agent-readable directories. A failed transaction may remove its fetched checkout during cleanup.
@@ -528,7 +528,11 @@ For an org standardizing on APM:
 
 ### Can a package embed hidden instructions?
 
-Not in files selected for deployment. `apm install` scans every authorized deployable source file before copying it. Critical hidden characters (tag characters, bidi overrides) block deployment. Source-only files are not deployed by this step; use `apm audit` to scan any file on demand, including those obtained outside APM.
+APM scans every authorized deployable source file for the hidden Unicode
+categories listed above before copying it. Critical tag characters and bidi
+overrides block deployment unless `--force` is used; warning-class findings do
+not. Source-only files are not deployed by this step. Use `apm audit` to scan
+other files, including those obtained outside APM.
 
 ### How do I audit what APM installed?
 

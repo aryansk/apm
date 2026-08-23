@@ -1448,6 +1448,7 @@ class SkillIntegrator(BaseIntegrator):
                     force=force,
                     logger=logger,
                     trust_bin=trust_bin,
+                    source_plan=source_plan,
                 )
 
         # Check if this is a native Skill (already has SKILL.md at root)
@@ -1567,6 +1568,7 @@ class SkillIntegrator(BaseIntegrator):
         force: bool = False,
         logger=None,
         trust_bin: bool | None = None,
+        source_plan=None,
     ) -> tuple[list[Path], str | None]:
         """Deploy bin/ executables and plugin manifest for a MARKETPLACE_PLUGIN.
 
@@ -1609,21 +1611,39 @@ class SkillIntegrator(BaseIntegrator):
 
         # The package ships executables -- from here a non-deploy is a
         # reportable skip, not a silent no-op.
-        if scope is not InstallScope.USER:
-            if logger and scope is InstallScope.PROJECT:
-                logger.progress(
-                    "bin/ deploy is user-scope only; skipping for project-scope install",
-                    symbol="info",
-                )
-            return [], "project_scope"
-
-        if self._bin_deploy_denied(package_info, policy, logger):
-            return [], None
-
         if targets is None:
             from apm_cli.integration.targets import active_targets
 
             targets = active_targets(project_root)
+        deployable = getattr(source_plan, "plugin_bin_deployable", None)
+        if deployable is None:
+            from apm_cli.install.exec_gate import plugin_bin_deployable
+
+            deployable = plugin_bin_deployable(
+                package_info,
+                targets,
+                project_root=project_root,
+                scope=scope,
+                policy=policy,
+                skip_bin=False,
+            )
+        if not deployable:
+            if scope is InstallScope.PROJECT:
+                if logger:
+                    logger.progress(
+                        "bin/ deploy is user-scope only; skipping for project-scope install",
+                        symbol="info",
+                    )
+                return [], "project_scope"
+            if not any(t.name == "claude" and t.supports("skills") for t in targets):
+                if logger:
+                    logger.progress(
+                        "bin/ present but no active Claude skills target; skipping bin deploy for "
+                        f"{package_info.get_canonical_dependency_string()}",
+                        symbol="warning",
+                    )
+                return [], "no_claude_target"
+            return [], None
 
         # Claude-specific contract: only Claude targets that support skills.
         claude_targets = [t for t in targets if t.name == "claude" and t.supports("skills")]
@@ -1666,35 +1686,6 @@ class SkillIntegrator(BaseIntegrator):
             )
 
         return deployed, None
-
-    @staticmethod
-    def _bin_deploy_denied(package_info, policy, logger) -> bool:
-        """Return True when policy opts the package out of bin/ deployment."""
-        if policy is None:
-            return False
-        bd_policy = policy.bin_deploy
-        if bd_policy is None:
-            return False
-        from apm_cli.security.executables import normalize_bin_deploy_deny_key
-
-        canonical = package_info.get_canonical_dependency_string()
-        normalized_canonical = normalize_bin_deploy_deny_key(canonical)
-        if bd_policy.deny_all:
-            if logger:
-                logger.progress(
-                    f"bin_deploy.deny_all: skipping bin deploy for {canonical}",
-                    symbol="info",
-                )
-            return True
-        deny_entries = {normalize_bin_deploy_deny_key(entry) for entry in bd_policy.deny}
-        if normalized_canonical in deny_entries:
-            if logger:
-                logger.progress(
-                    f"bin_deploy.deny: skipping bin deploy for {canonical}",
-                    symbol="info",
-                )
-            return True
-        return False
 
     def _deploy_bin_files(
         self,

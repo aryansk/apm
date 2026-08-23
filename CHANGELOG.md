@@ -23,9 +23,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- `apm install` now scans and materializes the same authorized hook bundles,
-  canvas extensions, and skill paths, preventing valid hook scripts from being
-  omitted while source-only content remains excluded. (#2490)
+- `apm install` now uses one authorized deployable file set for prompts, agents,
+  commands, instructions, hooks, canvases, skills, and approved plugin bins.
+  It scans exactly what it can deploy, so source-only files no longer cause
+  false-positive blocks while deployed content remains protected. (#2490)
 - Hook commands such as `"${CLAUDE_PLUGIN_ROOT}"/hooks/probe.py` now rewrite to
   `"${CLAUDE_PLUGIN_ROOT}/hooks/probe.py"` and warn when a supported plugin-root
   placeholder remains unresolved instead of silently deploying a dead hook.
