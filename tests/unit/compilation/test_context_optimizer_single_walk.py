@@ -196,8 +196,18 @@ class TestSingleWalkPopulatesBothCaches:
         _touch(tmp_path, "vendor/huge.txt")
 
         optimizer = ContextOptimizer(base_dir=str(tmp_path))
-        optimizer.optimize_instruction_placement([_make_instruction(apply_to=apply_to)])
+        real_walk = os.walk
+        walked_roots: list[Path] = []
 
+        def counting_walk(top, **kwargs):
+            for entry in real_walk(top, **kwargs):
+                walked_roots.append(Path(entry[0]))
+                yield entry
+
+        with patch("apm_cli.compilation.context_optimizer.os.walk", side_effect=counting_walk):
+            optimizer.optimize_instruction_placement([_make_instruction(apply_to=apply_to)])
+
+        assert walked_roots == [tmp_path, tmp_path / "src", tmp_path / "vendor"]
         assert tmp_path / "vendor/huge.txt" in optimizer._file_list_cache
         assert tmp_path / "vendor" in optimizer._directory_cache
 
@@ -215,6 +225,7 @@ class TestSingleWalkPopulatesBothCaches:
         assert set(optimizer._scan_top_level_roots or ()) == set(roots)
         assert tmp_path / "vendor/huge.txt" not in optimizer._file_list_cache
         assert {path.parent.parent.name for path in optimizer._file_list_cache} == set(roots)
+        assert optimizer._optimization_decisions[0].matching_directories == len(roots)
 
     def test_hidden_root_and_literal_root_are_scanned_together(self, tmp_path: Path) -> None:
         """A targeted hidden root remains eligible alongside ordinary roots."""
@@ -230,6 +241,7 @@ class TestSingleWalkPopulatesBothCaches:
         assert tmp_path / ".github/instructions/guide.md" in optimizer._file_list_cache
         assert tmp_path / "src/main.py" in optimizer._file_list_cache
         assert tmp_path / "vendor/huge.txt" not in optimizer._file_list_cache
+        assert optimizer._optimization_decisions[0].matching_directories == 2
 
     def test_excluded_literal_root_stays_excluded(self, tmp_path: Path) -> None:
         """Configured exclusions still win when applyTo names their root."""
@@ -241,6 +253,7 @@ class TestSingleWalkPopulatesBothCaches:
 
         assert tmp_path / "vendor/generated.py" not in optimizer._file_list_cache
         assert tmp_path / "vendor" not in optimizer._directory_cache
+        assert optimizer._optimization_decisions[0].matching_directories == 0
 
     def test_universal_scan_does_not_follow_directory_symlinks(self, tmp_path: Path) -> None:
         """The root filter leaves the no-follow traversal contract unchanged."""
@@ -252,6 +265,7 @@ class TestSingleWalkPopulatesBothCaches:
 
         assert tmp_path / "src/main.py" in optimizer._file_list_cache
         assert tmp_path / "linked" not in optimizer._directory_cache
+        assert optimizer._optimization_decisions[0].matching_directories == 1
 
 
 class TestGetAllFilesRoutesThroughAnalyze:
