@@ -195,7 +195,11 @@ class TestAgentsCompilerCompileException(unittest.TestCase):
         ) as mock_disc:
             result = compiler.compile(config)  # no primitives passed → discovers  # noqa: F841
 
-        mock_disc.assert_called_once_with(str(compiler.base_dir), exclude_patterns=config.exclude)
+        mock_disc.assert_called_once()
+        args, kwargs = mock_disc.call_args
+        self.assertEqual(args, (str(compiler.base_dir),))
+        self.assertEqual(kwargs["exclude_patterns"], config.exclude)
+        self.assertIn("inventory", kwargs)
 
 
 # ---------------------------------------------------------------------------

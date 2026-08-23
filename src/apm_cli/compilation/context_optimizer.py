@@ -517,6 +517,11 @@ class ContextOptimizer:
             project_files = [
                 current_path / name for name in entry.file_names if not name.startswith(".")
             ]
+            self._children_by_directory[current_path] = [
+                current_path / name
+                for name in entry.child_names
+                if self._is_placement_path(current_path / name)
+            ]
             if not project_files:
                 continue
 
@@ -526,18 +531,11 @@ class ContextOptimizer:
                 total_files=len(project_files),
                 file_types={path.suffix for path in project_files},
             )
-            self._children_by_directory[current_path] = [
-                current_path / name
-                for name in entry.child_names
-                if self._is_placement_path(current_path / name)
-            ]
-
-            matching_files = [
-                path for path in project_files if path in selected_files and path.is_file()
-            ]
+            candidate_files = [path for path in project_files if path in selected_files]
+            matching_files = [path for path in candidate_files if path.is_file()]
+            self._file_list_cache.extend(candidate_files)
             if matching_files:
                 self._files_by_directory[current_path] = matching_files
-                self._file_list_cache.extend(matching_files)
 
     def _is_placement_path(self, path: Path, relative_path: Path | None = None) -> bool:
         """Return whether an inventory path participates in placement accounting."""
@@ -592,12 +590,15 @@ class ContextOptimizer:
         relative_path = relative_path or self._relative_path(path)
         if relative_path is None:
             return True
-        # os.walk reaches a nested directory only after _should_exclude_subdir
-        # admitted its parent, so the top-level component is sufficient here.
         return bool(
             relative_path.parts
-            and relative_path.parts[0].startswith(".")
-            and relative_path.parts[0] not in self._placement_hidden_tool_trees
+            and (
+                (
+                    relative_path.parts[0].startswith(".")
+                    and relative_path.parts[0] not in self._placement_hidden_tool_trees
+                )
+                or any(part.startswith(".") for part in relative_path.parts[1:])
+            )
         )
 
     def _targeted_hidden_tool_roots(

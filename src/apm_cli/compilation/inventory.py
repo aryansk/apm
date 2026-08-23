@@ -8,6 +8,15 @@ from pathlib import Path
 
 from ..utils.exclude import should_exclude, validate_exclude_patterns
 
+_UNIVERSALLY_SKIPPED_DIRS = frozenset(
+    {
+        ".git",
+        "node_modules",
+        "__pycache__",
+        ".pytest_cache",
+    }
+)
+
 
 @dataclass(frozen=True)
 class InventoryDirectory:
@@ -54,7 +63,10 @@ class CompileInventory:
                 continue
 
             admitted_children = sorted(
-                name for name in child_dirs if not should_exclude(path / name, root, safe_patterns)
+                name
+                for name in child_dirs
+                if name not in _UNIVERSALLY_SKIPPED_DIRS
+                and not should_exclude(path / name, root, safe_patterns)
             )
             child_dirs[:] = admitted_children
             relative_path = path.relative_to(root)

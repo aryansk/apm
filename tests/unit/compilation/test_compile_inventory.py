@@ -24,6 +24,10 @@ def test_inventory_is_sorted_exclusion_aware_and_does_not_follow_symlinks(tmp_pa
     _touch(tmp_path, "src/z.py")
     _touch(tmp_path, "src/a.py")
     _touch(tmp_path, "vendor/ignored.py")
+    _touch(tmp_path, ".git/config")
+    _touch(tmp_path, "node_modules/package/index.js")
+    _touch(tmp_path, "__pycache__/inventory.pyc")
+    _touch(tmp_path, ".pytest_cache/metadata")
     (tmp_path / "linked").symlink_to(tmp_path / "src", target_is_directory=True)
 
     inventory = CompileInventory.collect(tmp_path, exclude_patterns=["vendor"])
@@ -39,4 +43,8 @@ def test_inventory_is_sorted_exclusion_aware_and_does_not_follow_symlinks(tmp_pa
         tmp_path / "src/z.py",
     )
     assert not inventory.contains_directory(tmp_path / "vendor")
+    assert not inventory.contains_directory(tmp_path / ".git")
+    assert not inventory.contains_directory(tmp_path / "node_modules")
+    assert not inventory.contains_directory(tmp_path / "__pycache__")
+    assert not inventory.contains_directory(tmp_path / ".pytest_cache")
     assert not inventory.contains_directory(tmp_path / "linked")
