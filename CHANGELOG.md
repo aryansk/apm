@@ -23,11 +23,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- `apm install` and surviving-package reintegration now use one authorized
-  deployable file set for prompts, agents, commands, instructions, hooks,
-  canvases, skills, and approved plugin bins.
-  It scans exactly what it can deploy, so source-only files no longer cause
-  false-positive blocks while deployed content remains protected. (#2490)
+- Fixed false-positive security blocks from source-only package files:
+  `apm install` and surviving-package reintegration now scan the same authorized
+  file set they can deploy, while deployable prompts, hooks, skills, and approved
+  plugin bins remain protected. (#2490)
 - Hook commands such as `"${CLAUDE_PLUGIN_ROOT}"/hooks/probe.py` now rewrite to
   `"${CLAUDE_PLUGIN_ROOT}/hooks/probe.py"` and warn when a supported plugin-root
   placeholder remains unresolved instead of silently deploying a dead hook.

@@ -1308,6 +1308,7 @@ def _sync_integrations_after_uninstall(
                 scope=_rebuild_scope,
                 allow_executables=_allow_executables,
                 trust_bin=False,
+                bin_skip_reason_override="not_retrusted_on_uninstall",
             )
             deployed_files.extend(integration_result["deployed_files"])
         except Exception as exc:

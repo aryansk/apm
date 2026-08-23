@@ -219,6 +219,7 @@ def integrate_package_primitives(  # noqa: PLR0913
     allow_executables: builtins.dict[str, builtins.dict[str, bool]] | None = None,
     dep_target_subset: list[str] | None = None,
     trust_bin: bool | None = None,
+    bin_skip_reason_override: str | None = None,
 ) -> dict:
     """Run the full integration pipeline for a single package.
 
@@ -333,6 +334,11 @@ def integrate_package_primitives(  # noqa: PLR0913
 
     _skip_bin, _bin_skip_reason_override = _resolve_bin_skip(
         _bin_approved, trust_bin, non_interactive=not sys.stdout.isatty()
+    )
+    _bin_skip_reason_override = (
+        bin_skip_reason_override
+        if _skip_bin and bin_skip_reason_override is not None
+        else _bin_skip_reason_override
     )
     from apm_cli.install.deployable_source_plan import DeployableSourcePlan
     from apm_cli.install.helpers.security_scan import _pre_deploy_security_scan

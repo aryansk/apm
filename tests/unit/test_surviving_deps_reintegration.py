@@ -381,6 +381,7 @@ def test_uninstall_reintegration_preserves_user_scope_and_denies_bin_trust(
     assert len(observed) == 1
     assert observed[0]["scope"] is InstallScope.USER
     assert observed[0]["trust_bin"] is False
+    assert observed[0]["bin_skip_reason_override"] == "not_retrusted_on_uninstall"
 
 
 def test_hook_reintegration_sanitizes_blocked_dependency_identity(

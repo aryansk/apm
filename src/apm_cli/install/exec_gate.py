@@ -200,6 +200,9 @@ def log_bin_status(
     log_fn,
 ) -> None:
     """Emit integration-tree lines for bin/ deployment or skip reasons."""
+    from apm_cli.utils.diagnostics import printable_ascii_text
+
+    package_label = printable_ascii_text(package_name or getattr(package_info, "name", "unknown"))
     if skill_result.bin_deployed > 0:
         log_fn(
             f"  |-- {skill_result.bin_deployed} executable(s) deployed to "
@@ -215,16 +218,17 @@ def log_bin_status(
             "  |-- plugin ships executables; no active Claude Code skills target to receive them"
         )
     elif skill_result.bin_skipped_reason == "not_approved":
-        _pkg_label = package_name or getattr(package_info, "name", "unknown")
         log_fn(
             f"  |-- bin/ executables skipped (not approved in allowExecutables). "
-            f"Run 'apm approve {_pkg_label}' to approve."
+            f"Run 'apm approve {package_label}' to approve."
         )
     elif skill_result.bin_skipped_reason == "not_trusted":
-        from apm_cli.utils.diagnostics import printable_ascii_text
-
-        _pkg_label = printable_ascii_text(package_name or getattr(package_info, "name", "unknown"))
         log_fn(
             "  |-- bin/ executables skipped (not trusted). "
-            f"Run 'apm install --trust-bin {_pkg_label}' to deploy."
+            f"Run 'apm install --trust-bin {package_label}' to deploy."
+        )
+    elif skill_result.bin_skipped_reason == "not_retrusted_on_uninstall":
+        log_fn(
+            "  |-- bin/ executables not re-deployed during uninstall cleanup. "
+            f"Run 'apm install --trust-bin {package_label}' to restore them."
         )

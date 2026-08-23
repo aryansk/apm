@@ -232,6 +232,39 @@ def test_log_bin_status_not_trusted() -> None:
     ]
 
 
+def test_log_bin_status_sanitizes_not_approved_package_name() -> None:
+    """Approval guidance must not echo hidden package-name characters."""
+    skill_result = SimpleNamespace(bin_deployed=0, bin_skipped_reason="not_approved")
+    lines: list[str] = []
+
+    log_bin_status(
+        skill_result,
+        "",
+        "unsafe\u202ename",
+        SimpleNamespace(name="pkg"),
+        lines.append,
+    )
+
+    assert "\u202e" not in lines[0]
+    assert all(ord(character) < 128 for character in lines[0])
+
+
+def test_log_bin_status_explains_uninstall_retrust() -> None:
+    """Uninstall reconciliation should name why approved bin/ was skipped."""
+    skill_result = SimpleNamespace(
+        bin_deployed=0,
+        bin_skipped_reason="not_retrusted_on_uninstall",
+    )
+    lines: list[str] = []
+
+    log_bin_status(skill_result, "", "pkg", SimpleNamespace(name="pkg"), lines.append)
+
+    assert lines == [
+        "  |-- bin/ executables not re-deployed during uninstall cleanup. "
+        "Run 'apm install --trust-bin pkg' to restore them."
+    ]
+
+
 @pytest.mark.parametrize(
     ("bin_approved", "trust_bin", "expected"),
     [
