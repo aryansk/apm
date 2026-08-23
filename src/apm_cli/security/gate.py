@@ -98,9 +98,7 @@ class SecurityGate:
 
         if paths is not None:
             candidates = (
-                root / relative
-                for relative in sorted(paths)
-                if _is_safe_relative_path(relative)
+                root / relative for relative in sorted(paths) if _is_safe_relative_path(relative)
             )
             return SecurityGate._scan_candidates(
                 candidates,
