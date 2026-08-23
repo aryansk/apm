@@ -515,6 +515,9 @@ class TestGlobalOpenCodeScope:
         foreign_skill = fake_home / ".agents" / "skills" / "foreign" / "SKILL.md"
         foreign_skill.parent.mkdir(parents=True)
         foreign_skill.write_text("# Foreign\n", encoding="utf-8")
+        foreign_native_skill = opencode_root / "skills" / "foreign" / "SKILL.md"
+        foreign_native_skill.parent.mkdir(parents=True)
+        foreign_native_skill.write_text("# Foreign native\n", encoding="utf-8")
 
         install = _run_apm(
             apm_binary_path,
@@ -557,6 +560,7 @@ class TestGlobalOpenCodeScope:
         assert uninstall.returncode == 0, uninstall.stdout + uninstall.stderr
         assert not native_skill.exists()
         assert foreign_skill.read_text(encoding="utf-8") == "# Foreign\n"
+        assert foreign_native_skill.read_text(encoding="utf-8") == "# Foreign native\n"
         assert project_skill.is_file()
         assert (project_root / "AGENTS.md").read_text(encoding="utf-8") == project_agents
         assert (claude_root / "CLAUDE.md").read_text(encoding="utf-8") == claude_agents
