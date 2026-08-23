@@ -112,6 +112,32 @@ class TestHintGlobalRootContext:
 
         discover.assert_called_once_with(Path.home() / ".apm", include_scoped=True)
         assert "apm compile -g" in ctx.logger.info.call_args.args[0]
+        assert "OpenCode" in ctx.logger.info.call_args.args[0]
+
+    def test_hint_excludes_global_only_targets_for_scoped_only_instructions(self):
+        """Scoped-only OpenCode instructions do not promise updates for Claude."""
+        from apm_cli.core.scope import InstallScope
+        from apm_cli.install.phases.finalize import _hint_global_root_context
+
+        opencode = _make_target("OpenCode", "agents")
+        opencode.include_scoped_in_user_root_context = True
+        ctx = _make_install_context(
+            scope=InstallScope.USER,
+            targets=[opencode, _make_target("Claude Code", "claude")],
+        )
+
+        with (
+            patch("apm_cli.core.scope.get_apm_dir", return_value=Path.home() / ".apm"),
+            patch(
+                "apm_cli.compilation.user_root_context.discover_global_instructions",
+                return_value=[SimpleNamespace(apply_to="**/*.py")],
+            ),
+        ):
+            _hint_global_root_context(ctx)
+
+        message = ctx.logger.info.call_args.args[0]
+        assert "OpenCode" in message
+        assert "Claude Code" not in message
 
     def test_hint_lists_multiple_root_context_targets(self):
         """All distinct root-context target names are listed once each."""

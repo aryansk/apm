@@ -118,6 +118,11 @@ root context files. Run `apm compile` explicitly for `AGENTS.md`, `CLAUDE.md`,
 or `GEMINI.md`; `apm run` separately compiles referenced prompt files at
 execution time.
 
+For OpenCode user scope, first create or open an OpenCode config directory.
+Then run `apm install -g --target opencode` to deploy skills to
+`~/.config/opencode/skills/`, followed by `apm compile -g` to update
+`~/.config/opencode/AGENTS.md` with scoped instruction sections.
+
 After a project install stages dependency instructions for Gemini, Codex,
 OpenCode, or experimental Hermes, `apm install` prints an `[i]` hint naming
 `apm compile` and the root context files it will update. Targets such as Claude

@@ -105,9 +105,11 @@ in `references/`; keep `SKILL.md` to the always-relevant flow.
 | `cursor`          | `.agents/skills/<name>/SKILL.md`             |
 | `codex`           | `.agents/skills/<name>/SKILL.md`             |
 | `gemini`          | `.agents/skills/<name>/SKILL.md`             |
-| `opencode`        | `.agents/skills/<name>/SKILL.md` (project), `~/.config/opencode/skills/<name>/SKILL.md` (user) |
+| `opencode`        | `.agents/skills/<name>/SKILL.md`             |
 | `windsurf`        | `.agents/skills/<name>/SKILL.md`             |
 | `agent-skills`    | `.agents/skills/<name>/SKILL.md` (explicit)  |
+
+For user-scope locations, see the [Targets matrix](../../reference/targets-matrix/).
 
 Seven harnesses converge on the cross-tool `.agents/skills/`
 directory. Claude, Kiro, and Grok Build keep their harness-native paths

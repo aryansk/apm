@@ -262,9 +262,7 @@ apm compile -g --dry-run
 
 This reads **global instructions** from `~/.apm/apm_modules/` (instructions
 without `applyTo:` frontmatter) and writes user-scope root context files for
-root-context targets. OpenCode is the exception: its generated
-`~/.config/opencode/AGENTS.md` retains explicit sections for `applyTo`
-instructions as well:
+root-context targets:
 
 - `~/.claude/CLAUDE.md` (or `$CLAUDE_CONFIG_DIR/CLAUDE.md`)
 - `~/.codex/AGENTS.md`
@@ -272,6 +270,9 @@ instructions as well:
 - `~/.copilot/AGENTS.md`
 - `~/.cursor/AGENTS.md`
 - `~/.gemini/GEMINI.md`
+
+OpenCode is the exception: its generated `~/.config/opencode/AGENTS.md`
+retains explicit sections for `applyTo` instructions as well.
 
 ### Overwrite protection
 

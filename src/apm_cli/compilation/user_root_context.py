@@ -90,6 +90,7 @@ def _generate_content(
     instructions: list[Instruction],
     *,
     preserve_scoped_sections: bool = False,
+    base_dir: Path | None = None,
 ) -> str:
     """Generate root context content, retaining scoped sections when supported.
 
@@ -117,7 +118,7 @@ def _generate_content(
         sections.extend(
             render_instructions_block(
                 instructions,
-                base_dir=Path.cwd(),
+                base_dir=base_dir or Path.cwd(),
                 emit_instruction=emit,
             )
         )
@@ -257,6 +258,7 @@ def compile_user_root_contexts(
         content = _generate_content(
             target_instructions,
             preserve_scoped_sections=preserve_scoped_sections,
+            base_dir=source_root,
         )
 
         # -- overwrite protection --
