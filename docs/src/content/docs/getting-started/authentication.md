@@ -69,6 +69,9 @@ before that fetch.
 | Generic SSH | Token-free, with `BatchMode=yes` and `ConnectTimeout=30`. |
 | GitHub, GitLab, ADO | Continue using the hardened provider-specific environment. |
 
+APM rejects an HTTPS Git URL that Git configuration would rewrite to
+`http://` before any credential helper or provider credential is used.
+
 For Azure DevOps Services, APM resolves `ADO_APM_PAT`, then an Entra ID
 (AAD) bearer token from Azure CLI (`az`). Azure DevOps Server uses
 `ADO_APM_PAT` only. See [Azure DevOps](#azure-devops).

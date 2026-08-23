@@ -1430,15 +1430,21 @@ class AuthResolver:
         marketplace and dependency consumers from branching on transport.
         """
         policy = git_transport_policy(ctx.host_info.kind, remote_url)
+        base_env = self.hardened_git_base_env()
         if policy.use_resolved_credentials:
-            env = self.hardened_git_env_for_context(ctx)
+            env = self.git_env_for_context(ctx, base_env=base_env)
         else:
             env = self.build_noninteractive_git_env(
-                base_env=self.hardened_git_base_env(),
+                base_env=base_env,
                 host_kind=ctx.host_info.kind,
                 preserve_config_isolation=policy.preserve_config_isolation,
                 suppress_credential_helpers=policy.suppress_credential_helpers,
             )
+        if policy.reject_https_downgrade:
+            from ..deps.git_auth_env import GitAuthEnvBuilder
+
+            if GitAuthEnvBuilder.has_https_to_http_url_rewrite(remote_url, env):
+                raise ValueError("HTTPS Git remote is configured to rewrite to insecure HTTP")
         self._remove_platform_token_env(env)
         return env
 

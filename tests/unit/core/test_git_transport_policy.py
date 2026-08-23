@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+import os
+import subprocess
+from pathlib import Path
+
 import pytest
 
 from apm_cli.core.auth import AuthContext, AuthResolver, HostInfo
@@ -29,6 +33,7 @@ class _TokenManager:
             "GIT_CONFIG_GLOBAL": "/dev/null",
             "GIT_CONFIG_NOSYSTEM": "1",
             "GIT_SSH_COMMAND": "ssh -o ConnectTimeout=30 -o BatchMode=yes",
+            "HOME": os.environ.get("HOME", ""),
         }
 
 
@@ -82,6 +87,10 @@ def _context(kind: str) -> AuthContext:
         ("github", "https://github.com/org/repo.git", False, True),
         ("gitlab", "https://gitlab.com/org/repo.git", False, True),
         ("ado", "https://dev.azure.com/org/project/_git/repo", False, True),
+        ("ado", "http://dev.azure.com/org/project/_git/repo", False, True),
+        ("github", "git@github.com:org/repo.git", True, False),
+        ("gitlab", "git@gitlab.com:org/repo.git", True, False),
+        ("ado", "git@ssh.dev.azure.com:v3/org/project/repo", True, False),
     ],
 )
 def test_git_transport_policy_matrix(
@@ -116,6 +125,81 @@ def test_git_transport_policy_matrix(
     if remote_url.startswith("git@"):
         assert "BatchMode=yes" in env["GIT_SSH_COMMAND"]
         assert "ConnectTimeout=30" in env["GIT_SSH_COMMAND"]
+
+
+@pytest.mark.parametrize(
+    ("kind", "remote_url"),
+    [
+        ("generic", "http://gitea.example.test/org/repo.git"),
+        ("github", "http://github.com/org/repo.git"),
+        ("gitlab", "http://gitlab.com/org/repo.git"),
+        ("ado", "http://dev.azure.com/org/project/_git/repo"),
+    ],
+)
+def test_http_transport_never_receives_resolved_credentials(kind: str, remote_url: str) -> None:
+    """Plaintext HTTP suppresses every helper and APM credential channel."""
+    context = _context(kind)
+    context = AuthContext(
+        token="resolved-token",
+        source="test",
+        token_type="unknown",
+        host_info=context.host_info,
+        git_env=context.git_env,
+    )
+
+    env = AuthResolver(token_manager=_TokenManager()).git_env_for_remote(context, remote_url)
+
+    assert "GIT_TOKEN" not in env
+    assert "GIT_HTTP_EXTRAHEADER" not in env
+    assert env["GIT_CONFIG_NOSYSTEM"] == "1"
+    assert env["GIT_CONFIG_KEY_0"] == "credential.helper"
+    assert env["GIT_CONFIG_VALUE_0"] == ""
+
+
+def test_http_transport_replaces_caller_global_config() -> None:
+    """Plaintext HTTP never retains a config file that can inject headers."""
+
+    class _ConfiguredTokenManager(_TokenManager):
+        def setup_environment(self) -> dict[str, str]:
+            return {**super().setup_environment(), "GIT_CONFIG_GLOBAL": "/configured/gitconfig"}
+
+    env = AuthResolver(token_manager=_ConfiguredTokenManager()).git_env_for_remote(
+        _context("generic"),
+        "http://gitea.example.test/org/repo.git",
+    )
+
+    assert env["GIT_CONFIG_GLOBAL"] == os.devnull
+
+
+def test_https_to_http_url_rewrite_is_rejected_before_git_runs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Native helpers cannot follow an HTTPS remote onto plaintext HTTP."""
+    home = tmp_path / "home"
+    home.mkdir()
+    config = home / ".gitconfig"
+    subprocess.run(
+        (
+            "git",
+            "config",
+            "--file",
+            str(config),
+            "url.http://127.0.0.1:8080/.insteadOf",
+            "https://gitea.example.test/",
+        ),
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.delenv("GIT_CONFIG_GLOBAL", raising=False)
+    monkeypatch.delenv("GIT_CONFIG_NOSYSTEM", raising=False)
+
+    with pytest.raises(ValueError, match="rewrite to insecure HTTP"):
+        AuthResolver().git_env_for_remote(
+            _context("generic"),
+            "https://gitea.example.test/org/repo.git",
+        )
 
 
 @pytest.mark.parametrize(

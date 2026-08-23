@@ -198,6 +198,7 @@ def test_fetch_git_does_not_render_generic_exception_text(
 
     assert "helper-output-fixture-secret" not in str(raised.value)
     assert "git fetch failed" in str(raised.value)
+    assert "rerun the original marketplace command" in str(raised.value)
 
 
 def test_fetchers_dispatch_table_routes_kinds_to_correct_callable() -> None:

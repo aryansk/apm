@@ -127,8 +127,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (by @MohammedAlkindi; closes #2639) (#2645)
 - `apm uninstall --global` now cleans removed-only target files before deleting their ownership state, while preserving files owned by surviving packages. (#2658)
 - Generic HTTPS marketplace Git sources now preserve native credential helpers
-  without forwarding platform tokens; HTTP suppresses credentials and SSH is
-  token-free and noninteractive. (by @aryansk, #2594)
+  without forwarding platform tokens; HTTP and HTTPS-to-HTTP rewrites suppress
+  credentials, and SSH is token-free and noninteractive. (by @aryansk, #2594)
 - Windows binary is now Authenticode-signed in the release workflow, eliminating
   the `Trojan:Script/Wacatac.H!ml` Windows Defender false positive on unsigned
   PyInstaller bundles. (#2435)

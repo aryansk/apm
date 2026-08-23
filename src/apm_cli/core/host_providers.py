@@ -27,6 +27,7 @@ class GitTransportPolicy:
     allow_native_credential_lookup: bool = True
     preserve_config_isolation: bool = False
     suppress_credential_helpers: bool = False
+    reject_https_downgrade: bool = False
 
 
 @dataclass(frozen=True)
@@ -177,8 +178,6 @@ def git_transport_policy(host_kind: str, remote_url: str) -> GitTransportPolicy:
     AuthResolver preserve its noninteractive SSH command.
     """
     scheme = urllib.parse.urlsplit(remote_url).scheme.lower()
-    if host_kind != "generic":
-        return GitTransportPolicy(use_resolved_credentials=True)
     if scheme == "http":
         return GitTransportPolicy(
             use_resolved_credentials=False,
@@ -186,10 +185,16 @@ def git_transport_policy(host_kind: str, remote_url: str) -> GitTransportPolicy:
             preserve_config_isolation=True,
             suppress_credential_helpers=True,
         )
+    if host_kind != "generic" and scheme == "https":
+        return GitTransportPolicy(
+            use_resolved_credentials=True,
+            reject_https_downgrade=True,
+        )
     if scheme == "https":
         return GitTransportPolicy(
             use_resolved_credentials=False,
             allow_native_credential_lookup=False,
+            reject_https_downgrade=True,
         )
     return GitTransportPolicy(
         use_resolved_credentials=False,

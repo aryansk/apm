@@ -41,6 +41,16 @@ def _real_git() -> Path:
     return Path(executable).resolve()
 
 
+def _git_exec_path(git: Path) -> str:
+    """Return the helper directory paired with the selected Git executable."""
+    return subprocess.run(
+        (str(git), "--exec-path"),
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+
+
 def _write_credential_helper(home: Path, log_path: Path) -> Path:
     """Create a real helper that records only sentinel names, never values."""
     helper = home / "credential-helper.py"
@@ -67,6 +77,37 @@ def _write_credential_helper(home: Path, log_path: Path) -> Path:
     return helper
 
 
+def _write_tls_certificate(root: Path) -> tuple[Path, Path]:
+    """Generate a short-lived loopback certificate for the HTTPS Git fixture."""
+    openssl = shutil.which("openssl")
+    if openssl is None:
+        pytest.skip("openssl is required for the HTTPS Git fixture")
+    certificate = root / "certificate.pem"
+    key = root / "key.pem"
+    subprocess.run(
+        (
+            openssl,
+            "req",
+            "-x509",
+            "-newkey",
+            "rsa:2048",
+            "-nodes",
+            "-keyout",
+            str(key),
+            "-out",
+            str(certificate),
+            "-subj",
+            "/CN=127.0.0.1",
+            "-days",
+            "1",
+        ),
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    return certificate, key
+
+
 def test_generic_https_marketplace_add_uses_native_credential_helper(
     tmp_path: Path,
     apm_binary_path: Path,
@@ -86,8 +127,11 @@ def test_generic_https_marketplace_add_uses_native_credential_helper(
             "GIT_TOKEN": "git-sentinel",
             "APM_TEST_HELPER_LOG": str(helper_log),
             "GIT_ALLOW_PROTOCOL": "file:http:https",
+            "GIT_SSL_NO_VERIFY": "1",
         }
     )
+    real_git = _real_git()
+    environment["GIT_EXEC_PATH"] = _git_exec_path(real_git)
     repositories = LocalGitRepositoryFactory(isolated.repository_root, env=environment)
     repository = repositories.create("generic-marketplace")
     (repository.worktree / "marketplace.json").write_text(
@@ -97,31 +141,19 @@ def test_generic_https_marketplace_add_uses_native_credential_helper(
     repositories.commit(repository, message="seed marketplace")
     server_factory = LocalGitHttpServerFactory(
         isolated.repository_root,
-        real_git=_real_git(),
+        real_git=real_git,
         env=environment,
     )
+    certificate, key = _write_tls_certificate(isolated.root)
 
     with server_factory.start(
         (repository,),
         password=_HELPER_PASSWORD,
         private_repositories=(repository,),
+        certfile=certificate,
+        keyfile=key,
     ) as server:
-        remote_url = f"https://gitea.example.test/{repository.origin.name}"
-        subprocess.run(
-            (
-                "git",
-                "config",
-                "--file",
-                str(isolated.home / ".gitconfig"),
-                "--add",
-                f"url.{server.proxy_url}/.insteadOf",
-                "https://gitea.example.test/",
-            ),
-            check=True,
-            capture_output=True,
-            text=True,
-            env=environment,
-        )
+        remote_url = server.remote_url(repository)
         runner = ApmLifecycleRunner((str(apm_binary_path),))
         add_result = runner.run(
             ("marketplace", "add", remote_url, "--name", "generic-marketplace"),

@@ -46,6 +46,8 @@ platform token variables, `GIT_TOKEN`, and environment-based authorization-heade
 channels before the fetch. Plain `http://` marketplace registration is rejected;
 any attempted fetch isolates Git configuration and
 suppress helpers; generic SSH sources are token-free and use noninteractive SSH.
+APM rejects HTTPS Git URLs that Git configuration would rewrite to `http://`
+before credentials can be used.
 
 ## GitLab hosts
 

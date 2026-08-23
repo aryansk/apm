@@ -600,13 +600,15 @@ def _fetch_git(
             return None
         raise MarketplaceFetchError(
             source.name,
-            "git fetch failed; verify the remote and its configured Git credentials",
+            "git fetch failed; verify the remote, configured Git credentials, or SSH key",
+            retry_hint="Correct Git access and rerun the original marketplace command.",
         ) from exc
     except Exception as exc:
         logger.debug("Generic-git fetch failed for '%s': %s", source.name, type(exc).__name__)
         raise MarketplaceFetchError(
             source.name,
-            "git fetch failed; verify the remote and its configured Git credentials",
+            "git fetch failed; verify the remote, configured Git credentials, or SSH key",
+            retry_hint="Correct Git access and rerun the original marketplace command.",
         ) from exc
 
     target = Path(checkout_dir) / file_path

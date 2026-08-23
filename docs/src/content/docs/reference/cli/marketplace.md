@@ -118,7 +118,8 @@ apm marketplace add file:///srv/marketplaces/agent-forge.git --name agent-forge
 marketplace host is classified as GitHub, GitLab, or Azure DevOps.
 Other git hosts are fetched via subprocess `git` through `GitCache`.
 Generic HTTPS can use a local Git credential helper; plain HTTP suppresses
-credentials and generic SSH is token-free and noninteractive. See the
+credentials, HTTPS-to-HTTP Git URL rewrites are rejected, and generic SSH is
+token-free and noninteractive. See the
 [authentication transport table](../../../getting-started/authentication/#generic-marketplace-git-transport)
 for the full policy. Hosted `marketplace.json`
 URLs are public HTTPS only: APM sends no auth headers. Use a
