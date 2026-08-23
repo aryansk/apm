@@ -1678,6 +1678,9 @@ apply_to_owner="src/apm_cli/utils/patterns.py"
 apply_to_normalizer_defs=$(grep -rEc --include='*.py' \
     '^def _?normalize_apply_to\(' src/apm_cli \
     | awk -F: '{sum += $2} END {print sum + 0}')
+apply_to_prefix_defs=$(grep -rEc --include='*.py' \
+    '^def literal_apply_to_top_level_roots\(' src/apm_cli \
+    | awk -F: '{sum += $2} END {print sum + 0}')
 apply_to_parser="src/apm_cli/primitives/parser.py"
 hidden_tool_placement_owner="src/apm_cli/compilation/context_optimizer.py"
 hidden_tool_tree_defs=$(grep -rEc --include='*.py' \
@@ -1685,13 +1688,17 @@ hidden_tool_tree_defs=$(grep -rEc --include='*.py' \
     | awk -F: '{sum += $2} END {print sum + 0}')
 if [ "$apply_to_normalizer_defs" -ne 1 ] \
     || ! grep -q '^def normalize_apply_to(' "$apply_to_owner" \
+    || [ "$apply_to_prefix_defs" -ne 1 ] \
+    || ! grep -q '^def literal_apply_to_top_level_roots(' "$apply_to_owner" \
     || ! grep -q 'from apm_cli.utils.patterns import normalize_apply_to' "$apply_to_parser" \
     || grep -Eq '^def _?normalize_apply_to\(' "$apply_to_parser" \
     || ! grep -q 'normalize_apply_to(metadata.get("applyTo"), default="")' "$apply_to_parser" \
     || [ "$hidden_tool_tree_defs" -ne 1 ] \
     || ! grep -q '^PLACEMENT_HIDDEN_TOOL_TREES = frozenset(' "$hidden_tool_placement_owner" \
+    || ! grep -q 'literal_apply_to_top_level_roots(' "$hidden_tool_placement_owner" \
+    || grep -q '^    def _targeted_top_level_roots(' "$hidden_tool_placement_owner" \
     || ! grep -q 'not self._is_supported_hidden_tool_root(path)' "$hidden_tool_placement_owner"; then
-    echo "[x] applyTo normalization must use utils/patterns.py and hidden placement ContextOptimizer"
+    echo "[x] applyTo parsing must use utils/patterns.py and hidden placement ContextOptimizer"
     violations=$((violations + 1))
 fi
 

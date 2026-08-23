@@ -24,7 +24,11 @@ from ..output.models import (
 from ..primitives.models import Instruction
 from ..utils.exclude import matches_glob, should_exclude, validate_exclude_patterns
 from ..utils.paths import portable_relpath
-from ..utils.patterns import has_top_level_comma, parse_apply_to
+from ..utils.patterns import (
+    has_top_level_comma,
+    literal_apply_to_top_level_roots,
+    parse_apply_to,
+)
 
 # CRITICAL: Shadow Click commands to prevent namespace collision
 # When this module is imported during 'apm compile', Click's active context
@@ -271,7 +275,9 @@ class ContextOptimizer:
         # Shared file discovery runs once per compile batch, so traverse the
         # union of roots explicitly targeted by its instructions.
         self._placement_hidden_tool_trees = self._targeted_hidden_tool_roots(instructions)
-        self._scan_top_level_roots = self._targeted_top_level_roots(instructions)
+        self._scan_top_level_roots = literal_apply_to_top_level_roots(
+            instruction.apply_to for instruction in instructions
+        )
         self._file_list_cache = None
         self._glob_cache.clear()
         self._glob_set_cache.clear()
@@ -301,7 +307,7 @@ class ContextOptimizer:
                             instruction=instruction,
                             pattern="(global)",
                             matching_directories=1,
-                            total_directories=len(self._directory_cache),
+                            total_directories=self._placement_directory_count(),
                             distribution_score=1.0,
                             strategy=PlacementStrategy.DISTRIBUTED,
                             placement_directories=[self.base_dir],
@@ -644,35 +650,6 @@ class ContextOptimizer:
                 )
         return frozenset(targeted_roots)
 
-    def _targeted_top_level_roots(
-        self, instructions: builtins.list[Instruction]
-    ) -> frozenset[str] | None:
-        """Return literal top-level roots shared by all scoped applyTo patterns.
-
-        A wildcard or root-wide pattern requires the full project walk, so this
-        returns ``None`` in that case. Global-only instruction sets also keep
-        the existing full-walk behavior.
-        """
-        roots: builtins.set[str] = set()
-        saw_scoped_pattern = False
-        for instruction in instructions:
-            if not instruction.apply_to:
-                continue
-            for pattern in parse_apply_to(instruction.apply_to):
-                normalized = pattern.replace("\\", "/")
-                while normalized.startswith("./"):
-                    normalized = normalized[2:]
-                first, separator, _rest = normalized.partition("/")
-                if (
-                    not separator
-                    or first == "**"
-                    or any(token in first for token in ("*", "?", "[", "{"))
-                ):
-                    return None
-                saw_scoped_pattern = True
-                roots.add(first)
-        return frozenset(roots) if saw_scoped_pattern else None
-
     def _relative_path(self, path: Path) -> Path | None:
         """Return a lexical path for a directory discovered under ``base_dir``."""
         try:
@@ -690,6 +667,23 @@ class ContextOptimizer:
             True if path should be excluded, False otherwise
         """
         return should_exclude(path, self.base_dir, self._exclude_patterns)
+
+    def _is_within_placement_scan_scope(self, directory: Path) -> bool:
+        """Return whether a cached directory participates in scoped placement."""
+        if self._scan_top_level_roots is None or directory == self.base_dir:
+            return True
+        relative_path = self._relative_path(directory)
+        return bool(
+            relative_path
+            and relative_path.parts
+            and relative_path.parts[0] in self._scan_top_level_roots
+        )
+
+    def _placement_directory_count(self) -> int:
+        """Count directories relevant to the active placement scan scope."""
+        return sum(
+            self._is_within_placement_scan_scope(directory) for directory in self._directory_cache
+        )
 
     def _find_optimal_placements(
         self, instruction: Instruction, verbose: bool = False
@@ -758,7 +752,7 @@ class ContextOptimizer:
                 instruction=instruction,
                 pattern=pattern,
                 matching_directories=0,
-                total_directories=len(self._directory_cache),
+                total_directories=self._placement_directory_count(),
                 distribution_score=0.0,
                 strategy=PlacementStrategy.DISTRIBUTED,
                 placement_directories=[placement],
@@ -807,7 +801,7 @@ class ContextOptimizer:
             instruction=instruction,
             pattern=pattern,
             matching_directories=len(matching_directories),
-            total_directories=len(self._directory_cache),
+            total_directories=self._placement_directory_count(),
             distribution_score=distribution_score,
             strategy=strategy,
             placement_directories=placements,
@@ -1018,8 +1012,9 @@ class ContextOptimizer:
         Returns:
             float: Distribution score accounting for spread and depth diversity.
         """
-        total_dirs_with_files = len(
-            [d for d in self._directory_cache.values() if d.total_files > 0]
+        total_dirs_with_files = sum(
+            analysis.total_files > 0 and self._is_within_placement_scan_scope(directory)
+            for directory, analysis in self._directory_cache.items()
         )
         if total_dirs_with_files == 0:
             return 0.0

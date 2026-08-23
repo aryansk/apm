@@ -23,16 +23,18 @@ def test_apply_to_normalization_and_hidden_placement_have_canonical_owners() -> 
     guard = (root / "scripts/lint-architecture-boundaries.sh").read_text(encoding="utf-8")
 
     assert patterns.count("def normalize_apply_to(") == 1
+    assert patterns.count("def literal_apply_to_top_level_roots(") == 1
     assert "from apm_cli.utils.patterns import normalize_apply_to" in parser
     assert "def _normalize_apply_to(" not in parser
     assert "PLACEMENT_HIDDEN_TOOL_TREES = frozenset(" in optimizer
     assert "def _targeted_hidden_tool_roots(" in optimizer
+    assert "literal_apply_to_top_level_roots(" in optimizer
+    assert "def _targeted_top_level_roots(" not in optimizer
     assert "self._placement_hidden_tool_trees" in optimizer
     assert "not self._is_supported_hidden_tool_root(path)" in optimizer
     assert "| applyTo normalization and hidden-tool placement |" in owner_table
     assert (
-        "applyTo normalization must use utils/patterns.py and hidden placement ContextOptimizer"
-        in guard
+        "applyTo parsing must use utils/patterns.py and hidden placement ContextOptimizer" in guard
     )
 
 
@@ -71,7 +73,47 @@ def test_apply_to_owner_guard_rejects_a_parser_normalizer(tmp_path: Path) -> Non
     )
 
     assert result.returncode == 1
+    assert "applyTo parsing must use utils/patterns.py and hidden placement ContextOptimizer" in (
+        result.stdout
+    )
+
+
+def test_apply_to_owner_guard_rejects_optimizer_local_prefix_parser(tmp_path: Path) -> None:
+    """AC31 rejects restoring local traversal-prefix parsing."""
+    root = Path(__file__).parents[2]
+    sandbox = tmp_path / "repo"
+    shutil.copytree(
+        root,
+        sandbox,
+        ignore=shutil.ignore_patterns(
+            ".git",
+            ".venv",
+            ".pytest_cache",
+            "__pycache__",
+            "build",
+            "dist",
+            "node_modules",
+        ),
+    )
+    optimizer = sandbox / "src/apm_cli/compilation/context_optimizer.py"
+    optimizer.write_text(
+        optimizer.read_text(encoding="utf-8")
+        + "\n    def _targeted_top_level_roots(self) -> frozenset[str]:\n"
+        + "        return frozenset()\n",
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        ("bash", "scripts/lint-architecture-boundaries.sh"),
+        cwd=sandbox,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=300,
+    )
+
+    assert result.returncode == 1
     assert (
-        "applyTo normalization must use utils/patterns.py and hidden placement ContextOptimizer"
-        in (result.stdout)
+        "applyTo parsing must use utils/patterns.py and hidden placement ContextOptimizer"
+        in result.stdout
     )

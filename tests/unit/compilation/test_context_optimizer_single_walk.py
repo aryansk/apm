@@ -23,7 +23,7 @@ pytestmark = pytest.mark.component
 
 def _make_instruction(
     name: str = "inst",
-    apply_to: str = "**/*.py",
+    apply_to: str | None = "**/*.py",
 ) -> Instruction:
     return Instruction(
         name=name,
@@ -122,6 +122,136 @@ class TestSingleWalkPopulatesBothCaches:
         assert tmp_path / "src/main.py" in optimizer._file_list_cache
         assert tmp_path / "vendor/huge.txt" not in optimizer._file_list_cache
         assert tmp_path / "vendor" not in optimizer._directory_cache
+
+    def test_literal_prefix_matches_full_walk_placement_at_project_scale(
+        self, tmp_path: Path
+    ) -> None:
+        """A 6,602-file tree scans only src without changing placement output."""
+        _touch(tmp_path, "src/main.py")
+        _touch(tmp_path, "src/worker.py")
+        for directory_index in range(419):
+            file_count = 16 if directory_index < 315 else 15
+            for file_index in range(file_count):
+                _touch(tmp_path, f"pkg-{directory_index:03d}/file-{file_index:02d}.txt")
+
+        instruction = _make_instruction(apply_to="src/**/*.py")
+        real_walk = os.walk
+        scoped_walk_roots: list[Path] = []
+        full_walk_roots: list[Path] = []
+
+        def scoped_walk(top, **kwargs):
+            for entry in real_walk(top, **kwargs):
+                scoped_walk_roots.append(Path(entry[0]))
+                yield entry
+
+        def full_walk(top, **kwargs):
+            for root, dirs, files in real_walk(top, **kwargs):
+                full_walk_roots.append(Path(root))
+                # Do not pass os.walk's mutable list through: this reference
+                # traversal must ignore the optimizer's root-pruning mutation.
+                yield root, list(dirs), files
+
+        scoped = ContextOptimizer(base_dir=str(tmp_path))
+        with patch("apm_cli.compilation.context_optimizer.os.walk", side_effect=scoped_walk):
+            scoped_placement = scoped.optimize_instruction_placement([instruction])
+
+        full = ContextOptimizer(base_dir=str(tmp_path))
+        with patch("apm_cli.compilation.context_optimizer.os.walk", side_effect=full_walk):
+            full_placement = full.optimize_instruction_placement([instruction])
+
+        def placement_snapshot(
+            placement: dict[Path, list[Instruction]],
+        ) -> list[tuple[str, tuple[str, ...]]]:
+            return sorted(
+                (
+                    str(directory.relative_to(tmp_path)),
+                    tuple(instruction.name for instruction in instructions),
+                )
+                for directory, instructions in placement.items()
+            )
+
+        assert len(full_walk_roots) == 421
+        assert scoped_walk_roots == [tmp_path, tmp_path / "src"]
+        assert len(full._file_list_cache) == 6602
+        assert len(scoped._file_list_cache) == 2
+        assert placement_snapshot(scoped_placement) == placement_snapshot(full_placement)
+        assert scoped._optimization_decisions[0].matching_directories == 1
+        assert full._optimization_decisions[0].matching_directories == 1
+
+    @pytest.mark.parametrize(
+        "apply_to",
+        [
+            None,
+            "**/*.py",
+            "*.py",
+            "{src,docs}/**",
+            "*/src/**/*.py",
+            "src/**/*.py,**/*.md",
+            "src/{api,cli/**",
+        ],
+    )
+    def test_unprovable_prefix_keeps_full_walk(self, tmp_path: Path, apply_to: str | None) -> None:
+        """A global or ambiguous segment kills the root-pruning mutation."""
+        _touch(tmp_path, "src/main.py")
+        _touch(tmp_path, "vendor/huge.txt")
+
+        optimizer = ContextOptimizer(base_dir=str(tmp_path))
+        optimizer.optimize_instruction_placement([_make_instruction(apply_to=apply_to)])
+
+        assert tmp_path / "vendor/huge.txt" in optimizer._file_list_cache
+        assert tmp_path / "vendor" in optimizer._directory_cache
+
+    def test_comma_list_unions_ten_literal_roots(self, tmp_path: Path) -> None:
+        """Comma lists retain every literal root and prune unrelated siblings."""
+        roots = [f"package-{index:02d}" for index in range(10)]
+        for root in roots:
+            _touch(tmp_path, f"{root}/src/main.py")
+        _touch(tmp_path, "vendor/huge.txt")
+        apply_to = ",".join(f"{root}/src/**/*.py" for root in roots)
+
+        optimizer = ContextOptimizer(base_dir=str(tmp_path))
+        optimizer.optimize_instruction_placement([_make_instruction(apply_to=apply_to)])
+
+        assert set(optimizer._scan_top_level_roots or ()) == set(roots)
+        assert tmp_path / "vendor/huge.txt" not in optimizer._file_list_cache
+        assert {path.parent.parent.name for path in optimizer._file_list_cache} == set(roots)
+
+    def test_hidden_root_and_literal_root_are_scanned_together(self, tmp_path: Path) -> None:
+        """A targeted hidden root remains eligible alongside ordinary roots."""
+        _touch(tmp_path, ".github/instructions/guide.md")
+        _touch(tmp_path, "src/main.py")
+        _touch(tmp_path, "vendor/huge.txt")
+
+        optimizer = ContextOptimizer(base_dir=str(tmp_path))
+        optimizer.optimize_instruction_placement(
+            [_make_instruction(apply_to=".github/**/*.md,src/**/*.py")]
+        )
+
+        assert tmp_path / ".github/instructions/guide.md" in optimizer._file_list_cache
+        assert tmp_path / "src/main.py" in optimizer._file_list_cache
+        assert tmp_path / "vendor/huge.txt" not in optimizer._file_list_cache
+
+    def test_excluded_literal_root_stays_excluded(self, tmp_path: Path) -> None:
+        """Configured exclusions still win when applyTo names their root."""
+        _touch(tmp_path, "src/main.py")
+        _touch(tmp_path, "vendor/generated.py")
+
+        optimizer = ContextOptimizer(base_dir=str(tmp_path), exclude_patterns=["vendor"])
+        optimizer.optimize_instruction_placement([_make_instruction(apply_to="vendor/**/*.py")])
+
+        assert tmp_path / "vendor/generated.py" not in optimizer._file_list_cache
+        assert tmp_path / "vendor" not in optimizer._directory_cache
+
+    def test_universal_scan_does_not_follow_directory_symlinks(self, tmp_path: Path) -> None:
+        """The root filter leaves the no-follow traversal contract unchanged."""
+        _touch(tmp_path, "src/main.py")
+        (tmp_path / "linked").symlink_to(tmp_path / "src", target_is_directory=True)
+
+        optimizer = ContextOptimizer(base_dir=str(tmp_path))
+        optimizer.optimize_instruction_placement([_make_instruction(apply_to="**/*.py")])
+
+        assert tmp_path / "src/main.py" in optimizer._file_list_cache
+        assert tmp_path / "linked" not in optimizer._directory_cache
 
 
 class TestGetAllFilesRoutesThroughAnalyze:
