@@ -44,6 +44,19 @@ class DeployableSourcePlan:
     source_root: Path
     paths: frozenset[str]
     selected_skill_names: frozenset[str] | None = None
+    authorized_parent_prefixes: frozenset[str] = frozenset()
+
+    def __post_init__(self) -> None:
+        """Index authorized parents for constant-time copy filtering."""
+        if self.authorized_parent_prefixes:
+            return
+        prefixes = {
+            parent.as_posix()
+            for path in self.paths
+            for parent in Path(path).parents
+            if parent.as_posix() != "."
+        }
+        object.__setattr__(self, "authorized_parent_prefixes", frozenset(prefixes))
 
     @classmethod
     def create(
@@ -107,11 +120,28 @@ class DeployableSourcePlan:
             add_matching_files(source_root / ".apm" / "instructions", "*.instructions.md")
 
         if hooks_approved and "hooks" in target_primitives:
+            hook_files: list[Path] = []
             for root in (source_root / ".apm" / "hooks", source_root / "hooks"):
-                add_direct_matching_files(root, "*.json")
+                if not _is_safe_source_path(root, source_root) or not root.is_dir():
+                    continue
+                for path in root.glob("*.json"):
+                    if _is_safe_source_path(path, source_root) and path.is_file():
+                        hook_files.append(path)
+                        add_file(path)
+            if hook_files:
+                from apm_cli.integration.hook_integrator import HookIntegrator
+
+                for path in HookIntegrator.find_deployable_hook_bundle_files(
+                    source_root,
+                    hook_files,
+                ):
+                    add_file(path)
 
         if canvas_approved and "canvas" in target_primitives:
-            add_tree(source_root / ".apm" / "extensions")
+            from apm_cli.integration.canvas_integrator import CanvasIntegrator
+
+            for bundle in CanvasIntegrator.find_canvas_bundles(source_root):
+                add_tree(bundle)
 
         if "skills" in target_primitives:
             source_skill = source_root / "SKILL.md"
@@ -161,9 +191,7 @@ class DeployableSourcePlan:
                 ignored.append(name)
                 continue
             relative = portable_relpath(candidate, self.source_root)
-            if self.includes(relative) or any(
-                path.startswith(f"{relative}/") for path in self.paths
-            ):
+            if self.includes(relative) or relative in self.authorized_parent_prefixes:
                 continue
             ignored.append(name)
         return ignored

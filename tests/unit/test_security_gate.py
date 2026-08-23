@@ -93,6 +93,28 @@ class TestScanFiles:
         # Both files must be in findings (no early termination)
         assert len(v.findings_by_file) == 2
 
+    def test_explicit_paths_scan_without_walking_source_only_directories(
+        self,
+        tmp_path,
+        monkeypatch,
+    ):
+        """Authorized install plans scan only their exact paths."""
+        _write_file(tmp_path / "authorized.md", "clean content")
+        _write_file(tmp_path / "source-only" / "hostile.md", f"critical {CRITICAL_CHAR}")
+
+        def fail_walk(_root, **_kwargs):
+            raise AssertionError("explicit paths must not walk the source tree")
+
+        monkeypatch.setattr("apm_cli.security.gate.os.walk", fail_walk)
+        verdict = SecurityGate.scan_files(
+            tmp_path,
+            policy=BLOCK_POLICY,
+            paths=frozenset({"authorized.md"}),
+        )
+
+        assert verdict.should_block is False
+        assert verdict.scanned_files == frozenset({"authorized.md"})
+
     def test_report_policy_ignores_critical(self, tmp_path):
         _write_file(tmp_path / "evil.md", f"critical {CRITICAL_CHAR}")
         v = SecurityGate.scan_files(tmp_path, policy=REPORT_POLICY)

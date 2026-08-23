@@ -65,7 +65,11 @@ from apm_cli.hook_contract import (
     walk_hook_commands,
 )
 from apm_cli.integration.base_integrator import BaseIntegrator, IntegrationResult
-from apm_cli.integration.hook_bundle import copy_deployed_hook_bundle
+from apm_cli.integration.hook_bundle import (
+    _hook_source_root,
+    copy_deployed_hook_bundle,
+    iter_deployable_hook_bundle_files,
+)
 from apm_cli.integration.hook_command_paths import (
     iter_plugin_root_paths,
     iter_relative_script_paths,
@@ -524,6 +528,66 @@ class HookIntegrator(BaseIntegrator):
                     hook_files.append(f)
 
         return self.filter_authorized_files(hook_files, source_plan)
+
+    @classmethod
+    def find_deployable_hook_bundle_files(
+        cls,
+        package_path: Path,
+        hook_files: list[Path],
+    ) -> list[Path]:
+        """Return files copied with scripts referenced by approved hook descriptors."""
+        integrator = cls()
+        deployable_files = set(hook_files)
+        descriptor_files = set(hook_files)
+
+        for hook_file in hook_files:
+            data = integrator._parse_hook_json(hook_file)
+            if data is None:
+                continue
+            source_files = integrator._referenced_hook_source_files(
+                data,
+                package_path,
+                hook_file.parent,
+            )
+            for source_file in source_files:
+                source_root = _hook_source_root(package_path, hook_file.parent, source_file)
+                deployable_files.update(
+                    iter_deployable_hook_bundle_files(
+                        source_root,
+                        descriptor_files=descriptor_files,
+                    )
+                )
+        return sorted(deployable_files)
+
+    @staticmethod
+    def _referenced_hook_source_files(
+        data: dict,
+        package_path: Path,
+        hook_file_dir: Path,
+    ) -> set[Path]:
+        """Resolve existing package files referenced by a parsed hook document."""
+        source_files: set[Path] = set()
+        for declaration in walk_hook_commands(data):
+            command = normalize_quoted_plugin_root(declaration.command)
+            for match in iter_plugin_root_paths(command):
+                try:
+                    source_file = ensure_path_within(
+                        package_path / plugin_root_relative_path(match.group(1)),
+                        package_path,
+                    )
+                except PathTraversalError:
+                    continue
+                if source_file.is_file():
+                    source_files.add(source_file)
+            for match in iter_relative_script_paths(command):
+                source_file = _resolve_relative_hook_script(
+                    package_path,
+                    hook_file_dir,
+                    match.group(1)[2:].replace("\\", "/"),
+                )
+                if source_file is not None and source_file.is_file():
+                    source_files.add(source_file)
+        return source_files
 
     def _parse_hook_json(self, hook_file: Path) -> dict | None:
         """Parse a hook JSON file and return the data dict.

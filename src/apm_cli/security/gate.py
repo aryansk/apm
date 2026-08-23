@@ -8,6 +8,7 @@ Commands declare *intent* via ScanPolicy; the gate handles the rest.
 from __future__ import annotations
 
 import os
+from collections.abc import Collection
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
@@ -82,15 +83,33 @@ class SecurityGate:
         policy: ScanPolicy = BLOCK_POLICY,
         force: bool = False,
         path_filter=None,
+        paths: Collection[str] | None = None,
     ) -> ScanVerdict:
         """Walk *root*, scan accepted regular files, and return a verdict.
 
         Symlinks are never followed (``followlinks=False``, ``is_symlink()``).
         When provided, *path_filter* receives a portable source-relative path
         and selects the files included in the findings report.
+        When *paths* is provided, scan only those portable root-relative files
+        instead of walking *root*. Other callers retain the generic walk.
         """
         findings_by_file: dict[str, list[ScanFinding]] = {}
         scanned_files: set[str] = set()
+
+        if paths is not None:
+            candidates = (
+                root / relative
+                for relative in sorted(paths)
+                if _is_safe_relative_path(relative)
+            )
+            return SecurityGate._scan_candidates(
+                candidates,
+                root,
+                findings_by_file,
+                scanned_files,
+                policy,
+                force,
+            )
 
         for dirpath, _dirs, filenames in os.walk(root, followlinks=False):
             for fname in filenames:
@@ -108,6 +127,35 @@ class SecurityGate:
                 if file_findings:
                     findings_by_file[rel] = file_findings
 
+        return SecurityGate._build_verdict(
+            findings_by_file,
+            len(scanned_files),
+            policy,
+            force,
+            scanned_files=frozenset(scanned_files),
+        )
+
+    @staticmethod
+    def _scan_candidates(
+        candidates,
+        root: Path,
+        findings_by_file: dict[str, list[ScanFinding]],
+        scanned_files: set[str],
+        policy: ScanPolicy,
+        force: bool,
+    ) -> ScanVerdict:
+        """Scan explicit source paths without traversing unrelated directories."""
+        for fpath in candidates:
+            if fpath.is_symlink() or not fpath.is_file():
+                continue
+            rel = portable_relpath(fpath, root)
+            scanned_files.add(rel)
+            try:
+                file_findings = ContentScanner.scan_file(fpath)
+            except OSError:
+                continue
+            if file_findings:
+                findings_by_file[rel] = file_findings
         return SecurityGate._build_verdict(
             findings_by_file,
             len(scanned_files),
@@ -249,6 +297,12 @@ class SecurityGate:
 def ignore_symlinks(directory: str, contents: list[str]) -> list[str]:
     """``shutil.copytree`` ignore callback that filters out symlinks."""
     return [c for c in contents if (Path(directory) / c).is_symlink()]
+
+
+def _is_safe_relative_path(relative: str) -> bool:
+    """Return whether an explicit scan path remains relative to its root."""
+    path = Path(relative)
+    return bool(relative) and not path.is_absolute() and ".." not in path.parts
 
 
 def ignore_non_content(directory: str, contents: list[str]) -> list[str]:

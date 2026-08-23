@@ -100,11 +100,11 @@ class TestPreDeploySecurityScan:
         ):
             _pre_deploy_security_scan(_plan(tmp_path), diag, package_name="my-pkg", logger=logger)
 
-        logger.error.assert_called_once()
-        error_call = logger.error.call_args[0][0]
+        assert logger.error.call_count == 3
+        error_call = logger.error.call_args_list[0].args[0]
         assert "my-pkg" in error_call or "Blocked" in error_call
 
-    def test_logger_tree_items_when_blocking(self, tmp_path: Path) -> None:
+    def test_logger_error_items_when_blocking(self, tmp_path: Path) -> None:
         verdict = _make_verdict(has_findings=True, should_block=True)
         diag = DiagnosticCollector()
         logger = MagicMock()
@@ -115,7 +115,11 @@ class TestPreDeploySecurityScan:
         ):
             _pre_deploy_security_scan(_plan(tmp_path), diag, logger=logger)
 
-        assert logger.tree_item.call_count >= 2
+        assert logger.tree_item.call_count == 0
+        assert logger.error.call_count == 3
+        messages = [call.args[0] for call in logger.error.call_args_list]
+        assert any("Inspect source now" in message for message in messages)
+        assert any("Use --force" in message for message in messages)
 
     def test_no_logger_calls_when_logger_is_none(self, tmp_path: Path) -> None:
         """When logger=None, no AttributeError is raised."""

@@ -380,6 +380,7 @@ def copy_skill_to_target(
             canvas_approved=False,
             skip_bin=True,
         )
+    source_path = source_path.resolve()
     if source_path != source_plan.source_root:
         raise ValueError("copy_skill_to_target source_path must match source_plan.source_root")
 
@@ -388,7 +389,7 @@ def copy_skill_to_target(
     verdict = SecurityGate.scan_files(
         source_plan.source_root,
         policy=BLOCK_POLICY,
-        path_filter=source_plan.includes,
+        paths=source_plan.paths,
     )
     if verdict.should_block:
         return []

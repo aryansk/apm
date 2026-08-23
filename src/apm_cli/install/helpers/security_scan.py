@@ -7,7 +7,7 @@ into prompts, skills, or agent definitions.
 """
 
 from apm_cli.install.deployable_source_plan import DeployableSourcePlan
-from apm_cli.utils.diagnostics import DiagnosticCollector
+from apm_cli.utils.diagnostics import DiagnosticCollector, printable_ascii_text
 
 
 def _pre_deploy_security_scan(
@@ -32,7 +32,7 @@ def _pre_deploy_security_scan(
         source_plan.source_root,
         policy=BLOCK_POLICY,
         force=force,
-        path_filter=source_plan.includes,
+        paths=source_plan.paths,
     )
     if not verdict.has_findings:
         return True
@@ -45,11 +45,11 @@ def _pre_deploy_security_scan(
             logger.error(
                 f"  Blocked: {package_name or 'package'} contains critical hidden character(s)"
             )
-            logger.tree_item(
-                f"  |-- Inspect source now: {source_plan.source_root} "
+            logger.error(
+                f"  |-- Inspect source now: {printable_ascii_text(str(source_plan.source_root))} "
                 "(cleanup may remove it after this failure)"
             )
-            logger.tree_item("  |-- Use --force to deploy anyway")
+            logger.error("  |-- Use --force to deploy anyway")
         return False
 
     return True

@@ -3,6 +3,7 @@
 import json
 import logging
 import shutil
+from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -97,6 +98,31 @@ def _is_root_hook_descriptor(
     return stem == "hooks" or stem.startswith("hooks-") or stem.endswith("-hooks")
 
 
+def iter_deployable_hook_bundle_files(
+    source_root: Path,
+    *,
+    descriptor_files: set[Path] | None = None,
+    exclude_json_files: bool = False,
+) -> Iterator[Path]:
+    """Yield source files that hook bundle materialization may copy."""
+    descriptors = descriptor_files or set()
+    for source_file in sorted(source_root.rglob("*")):
+        if exclude_json_files and source_file.suffix.lower() == ".json":
+            _log.debug(
+                "Skipping JSON hook bundle asset %s for recursive-scanner target",
+                source_file,
+            )
+            continue
+        if (
+            source_file.is_symlink()
+            or not source_file.is_file()
+            or source_file.name in {"package.json", MARKER_FILENAME}
+            or _is_root_hook_descriptor(source_file, source_root, descriptors)
+        ):
+            continue
+        yield source_file
+
+
 def copy_deployed_hook_bundle(
     integrator: BaseIntegrator,
     *,
@@ -145,20 +171,11 @@ def copy_deployed_hook_bundle(
 
     copy_plan: dict[str, Path] = {}
     for source_root, target_root in source_target_roots:
-        for source_file in sorted(source_root.rglob("*")):
-            if exclude_json_files and source_file.suffix.lower() == ".json":
-                _log.debug(
-                    "Skipping JSON hook bundle asset %s for recursive-scanner target",
-                    source_file,
-                )
-                continue
-            if (
-                source_file.is_symlink()
-                or not source_file.is_file()
-                or source_file.name in {"package.json", MARKER_FILENAME}
-                or _is_root_hook_descriptor(source_file, source_root, descriptor_files)
-            ):
-                continue
+        for source_file in iter_deployable_hook_bundle_files(
+            source_root,
+            descriptor_files=descriptor_files,
+            exclude_json_files=exclude_json_files,
+        ):
             if source_plan is not None and not source_plan.includes(
                 portable_relpath(source_file, source_plan.source_root)
             ):

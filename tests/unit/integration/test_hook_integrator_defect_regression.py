@@ -5,10 +5,12 @@ from __future__ import annotations
 import json
 import logging
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
 from apm_cli.deps.lockfile import LockedDependency, LockFile
+from apm_cli.install.deployable_source_plan import DeployableSourcePlan
 from apm_cli.integration import hook_integrator as hook_integrator_module
 from apm_cli.integration.hook_integrator import HookIntegrator
 from apm_cli.integration.hook_ownership import dependency_hook_source_marker
@@ -115,6 +117,48 @@ def test_copilot_hook_path_no_doubling(tmp_path: Path) -> None:
     assert (
         project / ".github" / "hooks" / "scripts" / "superpowers" / "hooks" / "run-hook.cmd"
     ).exists()
+
+
+def test_source_plan_deploys_referenced_hook_bundle_for_copilot_and_kiro(tmp_path: Path) -> None:
+    """Both hook targets copy a script authorized by the shared source plan."""
+    project = tmp_path / "project"
+    (project / ".github").mkdir(parents=True)
+    (project / ".kiro").mkdir()
+    package_path = tmp_path / "superpowers"
+    hooks_dir = package_path / ".apm" / "hooks"
+    hooks_dir.mkdir(parents=True)
+    (hooks_dir / "run.sh").write_text("#!/bin/sh\necho ok\n", encoding="utf-8")
+    (hooks_dir / "hooks.json").write_text(
+        json.dumps(_session_start_hook("./run.sh")),
+        encoding="utf-8",
+    )
+    package_info = _package_info(package_path)
+    plan = DeployableSourcePlan.create(
+        SimpleNamespace(install_path=package_path),
+        [KNOWN_TARGETS["copilot"], KNOWN_TARGETS["kiro"]],
+        skill_subset=None,
+        hooks_approved=True,
+        canvas_approved=False,
+        skip_bin=True,
+    )
+
+    assert plan.paths == frozenset({".apm/hooks/hooks.json", ".apm/hooks/run.sh"})
+    integrator = HookIntegrator()
+    integrator.integrate_hooks_for_target(
+        KNOWN_TARGETS["copilot"],
+        package_info,
+        project,
+        source_plan=plan,
+    )
+    integrator.integrate_hooks_for_target(
+        KNOWN_TARGETS["kiro"],
+        package_info,
+        project,
+        source_plan=plan,
+    )
+
+    assert (project / ".github" / "hooks" / "scripts" / "superpowers" / "run.sh").is_file()
+    assert (project / ".kiro" / "hooks" / "superpowers" / "run.sh").is_file()
 
 
 def test_copilot_renames_claude_tool_events_to_camel_case(tmp_path: Path, caplog, capsys) -> None:

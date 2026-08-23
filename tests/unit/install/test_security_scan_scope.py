@@ -14,6 +14,9 @@ from apm_cli.integration.command_integrator import CommandIntegrator
 from apm_cli.integration.hook_integrator import HookIntegrator
 from apm_cli.integration.instruction_integrator import InstructionIntegrator
 from apm_cli.integration.prompt_integrator import PromptIntegrator
+from apm_cli.integration.skill_integrator import copy_skill_to_target
+from apm_cli.integration.targets import KNOWN_TARGETS
+from apm_cli.models.apm_package import APMPackage, PackageInfo, PackageType
 from apm_cli.security.gate import SecurityGate
 from apm_cli.utils.diagnostics import DiagnosticCollector
 
@@ -39,7 +42,7 @@ def _primitive_target(primitive: str) -> SimpleNamespace:
         ("agents", "agent.agent.md", False, False),
         ("instructions", ".apm/instructions/project.instructions.md", False, False),
         ("hooks", ".apm/hooks/pre-commit.json", True, False),
-        ("canvas", ".apm/extensions/canvas.py", False, True),
+        ("canvas", ".apm/extensions/canvas/extension.mjs", False, True),
     ],
 )
 def test_supported_primitives_scan_only_authorized_files(
@@ -91,6 +94,72 @@ def test_source_only_hidden_character_is_not_in_authorized_scan(tmp_path: Path) 
     assert verdict.should_block is False
     assert verdict.scanned_files == frozenset({"skills/clean/SKILL.md"})
     assert _pre_deploy_security_scan(plan, DiagnosticCollector(), package_name="clean") is True
+
+
+def test_source_only_canvas_content_is_not_authorized_for_scan(tmp_path: Path) -> None:
+    """Only immediate canvas bundles recognized by CanvasIntegrator enter the plan."""
+    bundle = tmp_path / ".apm" / "extensions" / "valid"
+    bundle.mkdir(parents=True)
+    (bundle / "extension.mjs").write_text("export default {};\n", encoding="utf-8")
+    source_only = tmp_path / ".apm" / "extensions" / "source-only"
+    source_only.mkdir()
+    (source_only / "fixture.txt").write_text("source \u202e fixture\n", encoding="utf-8")
+
+    plan = DeployableSourcePlan.create(
+        _package(tmp_path),
+        [_primitive_target("canvas")],
+        skill_subset=None,
+        hooks_approved=False,
+        canvas_approved=True,
+        skip_bin=True,
+    )
+    verdict = SecurityGate.scan_files(tmp_path, paths=plan.paths)
+
+    assert verdict.should_block is False
+    assert verdict.scanned_files == frozenset({".apm/extensions/valid/extension.mjs"})
+    assert ".apm/extensions/valid" in plan.authorized_parent_prefixes
+    assert plan.copy_ignore(
+        str(tmp_path / ".apm" / "extensions"),
+        ["valid", "source-only"],
+    ) == ["source-only"]
+
+
+@pytest.mark.windows_compat
+def test_direct_skill_copy_normalizes_equivalent_source_alias(
+    tmp_path: Path,
+) -> None:
+    """Direct skill deployment accepts a symlink alias of the resolved plan root."""
+    source = tmp_path / "direct-skill"
+    source.mkdir()
+    (source / "SKILL.md").write_text("direct skill\n", encoding="utf-8")
+    alias = tmp_path / "source-alias"
+    alias.symlink_to(source, target_is_directory=True)
+    project = tmp_path / "project"
+    (project / ".claude").mkdir(parents=True)
+    package_info = PackageInfo(
+        package=APMPackage(name="direct-skill", version="1.0.0"),
+        install_path=source,
+        package_type=PackageType.CLAUDE_SKILL,
+    )
+    plan = DeployableSourcePlan.create(
+        _package(source),
+        [KNOWN_TARGETS["claude"]],
+        skill_subset=None,
+        hooks_approved=False,
+        canvas_approved=False,
+        skip_bin=True,
+    )
+
+    deployed = copy_skill_to_target(
+        package_info,
+        alias,
+        project,
+        targets=[KNOWN_TARGETS["claude"]],
+        source_plan=plan,
+    )
+
+    assert deployed == [project / ".claude" / "skills" / "direct-skill"]
+    assert (deployed[0] / "SKILL.md").read_text(encoding="utf-8") == "direct skill\n"
 
 
 def test_nested_deployable_hidden_character_blocks_without_force(tmp_path: Path) -> None:

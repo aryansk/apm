@@ -691,9 +691,11 @@ def test_deployable_source_paths_have_single_authorized_plan() -> None:
 
     assert owner.count("class DeployableSourcePlan:") == 1
     assert "source_plan = DeployableSourcePlan.create(" in services
-    assert "path_filter=source_plan.includes" in scanner
+    assert "paths=source_plan.paths" in scanner
     assert "source_plan=source_plan" in services
     assert "source_plan.copy_ignore" in skills
+    assert "HookIntegrator.find_deployable_hook_bundle_files" in owner
+    assert "CanvasIntegrator.find_canvas_bundles" in owner
     assert "Deployable source paths must route through DeployableSourcePlan" in guard
     for integrator in (
         "prompt_integrator.py",
