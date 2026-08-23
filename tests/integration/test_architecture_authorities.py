@@ -53,6 +53,17 @@ def test_install_request_defaults_have_single_owner() -> None:
     )
 
 
+def test_uninstall_reintegration_routes_through_the_deployable_source_plan() -> None:
+    """Uninstall rebuild must not recreate a direct, unscanned write path."""
+    root = Path(__file__).parents[2]
+    engine = (root / "src/apm_cli/commands/uninstall/engine.py").read_text(encoding="utf-8")
+    guard = (root / "scripts/lint-architecture-boundaries.sh").read_text(encoding="utf-8")
+
+    assert "integrate_package_primitives(" in engine
+    assert "integrate_package_skill(" not in engine
+    assert "Deployable source paths must route through DeployableSourcePlan and its gate" in guard
+
+
 @pytest.mark.parametrize(
     ("relative_path", "source", "expected"),
     [

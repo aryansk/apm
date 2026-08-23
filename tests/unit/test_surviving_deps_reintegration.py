@@ -301,6 +301,39 @@ def test_uninstall_phase2_reintegrates_transitive_hooks(
     )
 
 
+def test_uninstall_reintegration_blocks_hostile_nested_skill_before_target_write(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A blocked survivor scan must not re-materialize its nested skill."""
+    monkeypatch.chdir(tmp_path)
+    package_path = tmp_path / "apm_modules" / "acme" / "hostile"
+    package_path.mkdir(parents=True)
+    (package_path / "apm.yml").write_text(
+        "name: hostile\nversion: 1.0.0\n",
+        encoding="utf-8",
+    )
+    hostile_skill = package_path / ".apm" / "skills" / "hostile" / "SKILL.md"
+    hostile_skill.parent.mkdir(parents=True)
+    hostile_skill.write_text("hidden\u202e-content\n", encoding="utf-8")
+    (tmp_path / "apm.yml").write_text(
+        "name: root\nversion: 0.0.0\ntargets:\n  - claude\n"
+        "dependencies:\n  apm:\n    - acme/hostile\n",
+        encoding="utf-8",
+    )
+    lockfile = LockFile()
+    lockfile.add_dependency(LockedDependency(repo_url="acme/hostile", depth=1))
+
+    _sync_integrations_after_uninstall(
+        APMPackage.from_apm_yml(tmp_path / "apm.yml"),
+        tmp_path,
+        set(),
+        MagicMock(),
+        lockfile=lockfile,
+    )
+
+    assert not (tmp_path / ".agents" / "skills" / "hostile").exists()
+
+
 def test_uninstall_survivor_rebuild_honors_package_target_restriction(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

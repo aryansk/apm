@@ -259,8 +259,11 @@ if [ "$deployable_plan_definition_count" -ne 1 ] \
     || ! grep -q 'source_plan = DeployableSourcePlan.create(' src/apm_cli/install/services.py \
     || ! grep -q 'path_filter=source_plan.includes' src/apm_cli/install/helpers/security_scan.py \
     || ! grep -q 'source_plan=source_plan' src/apm_cli/install/services.py \
+    || ! grep -q 'integrate_package_primitives(' src/apm_cli/commands/uninstall/engine.py \
+    || grep -q 'integrate_package_skill(' src/apm_cli/commands/uninstall/engine.py \
+    || ! grep -q 'source_plan = DeployableSourcePlan.create(' src/apm_cli/integration/skill_integrator.py \
     || [ -n "$deployable_plan_duplicate_hits" ]; then
-    echo "[x] Deployable source paths must route through DeployableSourcePlan"
+    echo "[x] Deployable source paths must route through DeployableSourcePlan and its gate"
     [ -n "$deployable_plan_duplicate_hits" ] && echo "$deployable_plan_duplicate_hits"
     violations=$((violations + 1))
 fi

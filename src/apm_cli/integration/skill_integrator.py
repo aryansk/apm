@@ -324,6 +324,8 @@ def copy_skill_to_target(
     source_path: Path,
     target_base: Path,
     targets=None,
+    *,
+    source_plan: "DeployableSourcePlan | None" = None,
 ) -> list[Path]:
     """Copy skill directory to all active target skills/ directories.
 
@@ -351,10 +353,46 @@ def copy_skill_to_target(
         source_path: Path to skill in apm_modules/
         target_base: Usually project root
         targets: Optional explicit list of TargetProfile objects.
+        source_plan: Authorized source files from the canonical install
+            materialization path. Direct callers without a plan receive a
+            conservative skills-only plan for their resolved targets.
 
     Returns:
         List of all deployed skill directory paths (empty if skipped).
     """
+    if targets is None:
+        from apm_cli.integration.targets import active_targets
+
+        targets = active_targets(target_base)
+    if source_plan is None:
+        from types import SimpleNamespace
+
+        from apm_cli.install.deployable_source_plan import DeployableSourcePlan
+
+        plan_package = package_info
+        if not isinstance(getattr(package_info, "install_path", None), Path):
+            plan_package = SimpleNamespace(install_path=source_path)
+        source_plan = DeployableSourcePlan.create(
+            plan_package,
+            targets,
+            skill_subset=None,
+            hooks_approved=False,
+            canvas_approved=False,
+            skip_bin=True,
+        )
+    if source_path != source_plan.source_root:
+        raise ValueError("copy_skill_to_target source_path must match source_plan.source_root")
+
+    from apm_cli.security.gate import BLOCK_POLICY, SecurityGate
+
+    verdict = SecurityGate.scan_files(
+        source_plan.source_root,
+        policy=BLOCK_POLICY,
+        path_filter=source_plan.includes,
+    )
+    if verdict.should_block:
+        return []
+
     # Check if package type allows skill installation (T4 routing)
     if not should_install_skill(package_info):
         return []
@@ -381,10 +419,6 @@ def copy_skill_to_target(
     # When no targets are provided, fall back to project-scope detection.
     # Callers responsible for user-scope should pass resolved targets
     # from resolve_targets().
-    if targets is None:
-        from apm_cli.integration.targets import active_targets
-
-        targets = active_targets(target_base)
     for target in targets:
         if not target.supports("skills"):
             continue
@@ -442,9 +476,11 @@ def copy_skill_to_target(
         skill_dir.parent.mkdir(parents=True, exist_ok=True)
         if skill_dir.exists():
             shutil.rmtree(skill_dir)
-        from apm_cli.security.gate import ignore_non_content
-
-        shutil.copytree(source_path, skill_dir, ignore=ignore_non_content)
+        shutil.copytree(
+            source_path,
+            skill_dir,
+            ignore=_build_deployable_copy_ignore(source_plan=source_plan),
+        )
         rewriter = SkillIntegrator()
         rewriter.init_link_resolver(package_info, target_base)
         rewriter._resolve_markdown_links_in_skill_bundle(source_path, skill_dir)

@@ -2904,6 +2904,7 @@ every stored hash, foreclosing algorithm-ambiguity attacks.
 | 17| Cross-target primitive deployment                    | [req-tg-008](#req-tg-008), [req-lk-021](#req-lk-021)               | Consumer-default  |
 | 18| Case-collision materialization confusion             | [req-lk-022](#req-lk-022), [req-rs-016](#req-rs-016)               | Consumer-default  |
 | 19| Executable deployment in non-interactive contexts    | [req-sc-014](#req-sc-014)                                          | Consumer-default  |
+| 20| Source-only or symlinked package content materialization | [req-sc-015](#req-sc-015)                                      | Consumer-default  |
 
 ### 10.12 Publisher provenance and attestations (reserved for v0.2)
 
@@ -3015,15 +3016,28 @@ policy gate [req-sc-009](#req-sc-009) is evaluated before per-invocation
 consent and always takes precedence: a policy-level denial cannot be
 overridden by a per-invocation opt-in.
 
+### 10.16 Authorized source-plan materialization
+
+**Threat.** A package can hide hostile content in a source-only file or a
+symlink entry, then reach a primitive target through a lifecycle path that
+does not reuse the authorization and scan decision made for ordinary install.
+
+**Mitigation.**
+
 <a id="req-sc-015"></a>
-**[req-sc-015]** A conforming **consumer** implementation that performs a
-pre-deployment content security scan MUST derive exactly one authorized
-source-file set after target, package-subset, and executable authorization.
-It MUST apply the scan only to that set and MUST materialize primitive files
-only from that same set. If a selected file violates a blocking scan policy,
-the consumer MUST reject deployment before writing a target file. The
-consumer MUST NOT scan or materialize a source-only file merely because it is
-present in the package tree.
+**[req-sc-015]** A conforming **consumer** implementation MUST derive exactly
+one authorized source-file set after target, package-subset, and executable
+authorization for every primitive-materialization lifecycle, including
+install and re-integration after uninstall. The set MUST exclude symlink
+entries. The consumer MUST apply any pre-deployment content security scan only
+to that set and MUST materialize primitive files only from that same set; each
+primitive-integrator materialization path MUST consume the canonical set rather
+than derive a second classifier. If a selected file violates a blocking scan
+policy, the consumer MUST reject that materialization before writing a
+source-derived target file. The consumer MUST NOT scan or materialize a
+source-only file merely because it is present in the package tree. The
+executable authorization used to derive the set remains governed by
+[req-sc-009](#req-sc-009).
 
 ---
 
@@ -3568,7 +3582,7 @@ renumbering of conformance classes.
 | [req-sc-012](#req-sc-012)                | MUST    | 10.14   | consumer    |
 | [req-sc-013](#req-sc-013)                | MUST    | 10.3    | consumer    |
 | [req-sc-014](#req-sc-014)                | MUST    | 10.15   | consumer    |
-| [req-sc-015](#req-sc-015)                | MUST    | 10.15   | consumer    |
+| [req-sc-015](#req-sc-015)                | MUST    | 10.16   | consumer    |
 | [req-rg-001](#req-rg-001)                | MUST    | 11.3.3  | registry    |
 | [req-cf-001](#req-cf-001)                | MUST    | 12.5    | consumer    |
 | [req-cf-002](#req-cf-002)                | MUST    | 12.3    | consumer    |
@@ -3614,7 +3628,7 @@ renumbering of conformance classes.
 | 0.1.28  | 2026-08-06 | Spec-citation fold for per-invocation executable consent in non-interactive contexts (closes #1620 Mode-B silent-extension gate). Added [req-sc-014] (Section 10.15, consumer MUST): a consumer that supports a per-invocation consent flag for bin/ executable deployment MUST deny deployment by default when stdout is not a TTY, unless the operator has explicitly opted in for that invocation; an explicit opt-in overrides the non-interactive default and permits deployment; an explicit opt-out overrides the default and denies deployment even in a terminal; the allowExecutables policy gate [req-sc-009] is evaluated first and always takes precedence. Added row 19 to the Section 10.11 summary table. Section 11.3.2 Consumer enumeration and Appendix C updated. Statement count: 111 -> 112 (107 MUST, 5 SHOULD). |
 | 0.1.29  | 2026-08-22 | Spec-citation fold for the Agent Plugins v1 native-lifecycle deployment boundary (closes #2522 Mode-B silent-extension gate). Added [req-tg-011] (Section 8.5.5, consumer MUST): a consumer MUST treat a schema-bearing Agent Plugins v1 dependency as undeployable until it exposes a machine-verifiable native lifecycle for that dependency; before any target handler or primitive integrator runs, the consumer MUST refuse deployment with one actionable diagnostic, MUST leave the project tree unchanged, MUST NOT fall back to legacy primitive projection, and MUST reach the identical single-diagnostic outcome whether the dependency is materialized alone, mixed with ordinary dependencies in the same install, or under `--dry-run`. Section 8.7 and Appendix C updated. Statement count: 112 -> 113 (108 MUST, 5 SHOULD). |
 | 0.1.30  | 2026-08-23 | Spec-citation fold for plugin-root hook command resolution (closes #2639 Mode-B silent-extension gate). Added [req-tg-012] (Section 8.5.6, consumer MUST): a consumer that resolves plugin-root placeholders treats a matching quoted placeholder followed by an outside path separator equivalently to the fully quoted path, preserves balanced expandable quoting, and emits a default-visible diagnostic instead of silently deploying any supported placeholder that remains unresolved. Section 8.7, Section 11.3.2, and Appendix C updated. Statement count: 113 -> 114 (109 MUST, 5 SHOULD). |
-| 0.1.31  | 2026-08-23 | Spec-citation fold for authorized pre-deployment scan scope (closes #2490 Mode-B silent-extension gate). Added [req-sc-015] (Section 10.15, consumer MUST): a consumer derives one authorized source-file set after target, package-subset, and executable authorization; scans and materializes only that set; rejects a selected blocking finding before a target write; and does not scan or materialize source-only package files. Section 1.3, Section 11.3.2, and Appendix C updated. Statement count: 114 -> 115 (110 MUST, 5 SHOULD). |
+| 0.1.31  | 2026-08-23 | Spec-citation fold for authorized pre-deployment scan scope (closes #2490 Mode-B silent-extension gate). Added [req-sc-015] (Section 10.16, consumer MUST): a consumer derives one post-authorization source-file set for every install and uninstall re-integration materialization lifecycle; excludes symlink entries; scans and materializes only that set; rejects a selected blocking finding before a source-derived target write; and does not scan or materialize source-only package files. Added row 20 to the Section 10.11 summary table. Section 1.3, Section 11.3.2, and Appendix C updated. Statement count: 114 -> 115 (110 MUST, 5 SHOULD). |
 
 Errata (none at publication).
 

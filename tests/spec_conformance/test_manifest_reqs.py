@@ -1036,3 +1036,13 @@ def test_authorized_source_plan_limits_scanning_and_skill_materialization(tmp_pa
         policy=BLOCK_POLICY,
         path_filter=plan.includes,
     ).has_findings
+
+
+@pytest.mark.req("req-sc-015")
+def test_authorized_source_plan_requirement_covers_reintegration_and_symlinks() -> None:
+    """The citation names every lifecycle and excludes symlink source entries."""
+    assert_spec_contains(
+        "including\ninstall and re-integration after uninstall",
+        "The set MUST exclude symlink\nentries.",
+        "canonical set rather\nthan derive a second classifier",
+    )
