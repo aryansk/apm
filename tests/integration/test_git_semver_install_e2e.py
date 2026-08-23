@@ -27,6 +27,8 @@ did not touch the network" without relying on subprocess sentinels.
 from __future__ import annotations
 
 import os
+import subprocess
+import sys
 from datetime import datetime
 from pathlib import Path
 from unittest.mock import patch
@@ -36,7 +38,6 @@ import yaml
 from click.testing import CliRunner
 
 from apm_cli.cli import cli
-from apm_cli.deps.git_semver_resolver import GitSemverResolver
 from apm_cli.marketplace.ref_resolver import RemoteRef
 from apm_cli.models.apm_package import (
     APMPackage,
@@ -270,6 +271,33 @@ def _run_install(
         return runner.invoke(cli, ["install", *(args or [])], catch_exceptions=False)
 
 
+def _source_cli_environment(child_env: dict[str, str]) -> dict[str, str]:
+    """Return a child environment that imports this checkout's CLI sources."""
+    env = dict(child_env)
+    source_root = str(Path(__file__).resolve().parents[2] / "src")
+    python_paths = [
+        source_root,
+        *(path for path in sys.path if path and Path(path).exists()),
+        *(env.get("PYTHONPATH", "").split(os.pathsep)),
+    ]
+    env["PYTHONPATH"] = os.pathsep.join(dict.fromkeys(path for path in python_paths if path))
+    return env
+
+
+def _source_cli_command(*args: str) -> tuple[str, ...]:
+    """Run the source checkout as a real CLI process."""
+    return (sys.executable, "-c", "from apm_cli.cli import main; main()", *args)
+
+
+def _file_tree_bytes(root: Path) -> dict[str, bytes]:
+    """Return every regular file below ``root`` for transaction assertions."""
+    return {
+        str(path.relative_to(root)): path.read_bytes()
+        for path in sorted(root.rglob("*"))
+        if path.is_file()
+    }
+
+
 # ---------------------------------------------------------------------------
 # Promise A: highest matching tag wins
 # Promise B: lockfile records all four semver fields
@@ -329,14 +357,12 @@ class TestPositionalVirtualSubdirectorySemver:
     )
     def test_positional_git_semver_uses_real_bare_remote_and_replays_lockfile(
         self,
-        runner: CliRunner,
         tmp_path: Path,
-        monkeypatch: pytest.MonkeyPatch,
         constraint: str,
         expected_tag: str,
         expected_version: str,
     ) -> None:
-        """Positional virtual ranges resolve tags before literal-ref preflight."""
+        """Positional virtual ranges resolve a local bare remote before preflight."""
         isolated = IsolatedApmEnvironment.create(tmp_path / "isolated", base_env=dict(os.environ))
         environment = isolated.subprocess_env()
         source = isolated.package_root / "mono"
@@ -344,6 +370,12 @@ class TestPositionalVirtualSubdirectorySemver:
         package.mkdir(parents=True)
         (package / "apm.yml").write_text(
             "name: pkg\nversion: 1.0.0\ndescription: fixture package\n",
+            encoding="utf-8",
+        )
+        instructions = package / ".apm" / "instructions"
+        instructions.mkdir(parents=True)
+        (instructions / "fixture.instructions.md").write_text(
+            "# Fixture\n",
             encoding="utf-8",
         )
 
@@ -358,48 +390,40 @@ class TestPositionalVirtualSubdirectorySemver:
         second_commit = repositories.commit(repository, message="pkg v1.2.0")
         repositories.tag(repository, "pkg-v1.2.0", second_commit)
 
-        for name, value in repositories.url_rewrite_subprocess_env(
-            repository,
-            "https://github.com/acme/mono.git",
-        ).items():
-            monkeypatch.setenv(name, value)
+        child_env = _source_cli_environment(
+            repositories.url_rewrite_subprocess_env(
+                repository,
+                "https://github.com/acme/mono.git",
+            )
+        )
+        trace_path = isolated.work_root / "git-trace.log"
+        child_env["GIT_TRACE"] = str(trace_path)
 
         project = isolated.work_root / "consumer"
         _write_apm_yml(project, [])
         raw_reference = f"acme/mono/packages/pkg#{constraint}"
-        resolver_calls: list[tuple[str, str, str]] = []
-        original_resolve = GitSemverResolver.resolve
-
-        def capture_resolve(
-            self: GitSemverResolver,
-            *,
-            owner_repo: str,
-            package_name: str,
-            constraint: str,
-            remote_url: str | None = None,
-        ):
-            resolver_calls.append((owner_repo, package_name, constraint))
-            return original_resolve(
-                self,
-                owner_repo=owner_repo,
-                package_name=package_name,
-                constraint=constraint,
-                remote_url=remote_url,
-            )
-
-        downloader = _DownloaderStub(
-            {
-                "pkg-v1.0.0": first_commit.sha,
-                "pkg-v1.2.0": second_commit.sha,
-            }
+        command = _source_cli_command(
+            "install",
+            "--no-policy",
+            "--https",
+            "--parallel-downloads",
+            "0",
+            raw_reference,
         )
-        downloader.install(monkeypatch)
-        monkeypatch.setattr(GitSemverResolver, "resolve", capture_resolve)
-
-        first = _run_install(runner, project, monkeypatch, [raw_reference])
-        assert first.exit_code == 0, first.output
-        assert resolver_calls == [("acme/mono", "pkg", constraint)]
-        assert downloader.calls == [("acme/mono", expected_tag)]
+        first = subprocess.run(
+            command,
+            cwd=project,
+            env=child_env,
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        assert first.returncode == 0, f"stdout={first.stdout!r}\nstderr={first.stderr!r}"
+        assert raw_reference in first.stdout
+        assert (
+            "git ls-remote --tags --heads https://github.com/acme/mono.git"
+            in trace_path.read_text(encoding="utf-8")
+        )
 
         lock_path = project / "apm.lock.yaml"
         first_lock = lock_path.read_bytes()
@@ -411,11 +435,93 @@ class TestPositionalVirtualSubdirectorySemver:
             first_commit.sha if expected_tag == "pkg-v1.0.0" else second_commit.sha
         )
         assert locked["version"] == expected_version
+        installed = project / ".github" / "instructions" / "fixture.instructions.md"
+        assert installed.exists(), "the resolved virtual subdirectory was not installed"
 
-        second = _run_install(runner, project, monkeypatch)
-        assert second.exit_code == 0, second.output
-        assert resolver_calls == [("acme/mono", "pkg", constraint)]
+        second = subprocess.run(
+            command[:-1],
+            cwd=project,
+            env=child_env,
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        assert second.returncode == 0, f"stdout={second.stdout!r}\nstderr={second.stderr!r}"
         assert lock_path.read_bytes() == first_lock
+
+    @pytest.mark.parametrize(
+        ("virtual_path", "tag", "create_unmarked_package"),
+        [
+            ("packages/pkg", "pkg-v0.9.0", False),
+            ("packages/missing", "missing-v1.0.0", False),
+            ("packages/nomarker", "nomarker-v1.0.0", True),
+        ],
+        ids=("missing-tag", "missing-virtual-path", "missing-package-marker"),
+    )
+    def test_positional_git_semver_failures_restore_every_project_file(
+        self,
+        tmp_path: Path,
+        virtual_path: str,
+        tag: str,
+        create_unmarked_package: bool,
+    ) -> None:
+        """Failure after positional ingress leaves no manifest, lock, or deployment state."""
+        isolated = IsolatedApmEnvironment.create(tmp_path / "isolated", base_env=dict(os.environ))
+        environment = isolated.subprocess_env()
+        source = isolated.package_root / "mono"
+        package = source / "packages" / "pkg"
+        package.mkdir(parents=True)
+        (package / "apm.yml").write_text(
+            "name: pkg\nversion: 1.0.0\ndescription: fixture package\n",
+            encoding="utf-8",
+        )
+        instructions = package / ".apm" / "instructions"
+        instructions.mkdir(parents=True)
+        (instructions / "fixture.instructions.md").write_text("# Fixture\n", encoding="utf-8")
+        if create_unmarked_package:
+            unmarked = source / virtual_path
+            unmarked.mkdir(parents=True)
+            (unmarked / "README.md").write_text("# Not a package\n", encoding="utf-8")
+
+        repositories = LocalGitRepositoryFactory(isolated.repository_root, env=environment)
+        repository = repositories.create("mono", source_tree=source)
+        commit = repositories.commit(repository, message="failure fixture")
+        repositories.tag(repository, tag, commit)
+
+        child_env = _source_cli_environment(
+            repositories.url_rewrite_subprocess_env(
+                repository,
+                "https://github.com/acme/mono.git",
+            )
+        )
+        project = isolated.work_root / "consumer"
+        _write_apm_yml(project, [])
+        (project / "apm.lock.yaml").write_text(
+            "lockfile_version: '1'\ndependencies: []\n",
+            encoding="utf-8",
+        )
+        before = _file_tree_bytes(project)
+        raw_reference = f"acme/mono/{virtual_path}#^1.0.0"
+
+        result = subprocess.run(
+            _source_cli_command(
+                "install",
+                "--no-policy",
+                "--https",
+                "--parallel-downloads",
+                "0",
+                raw_reference,
+            ),
+            cwd=project,
+            env=child_env,
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+
+        assert result.returncode != 0
+        assert raw_reference in result.stdout
+        assert _file_tree_bytes(project) == before
 
 
 # ---------------------------------------------------------------------------
