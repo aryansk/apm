@@ -1066,8 +1066,6 @@ def _sync_integrations_after_uninstall(
     """
     from ...install.services import (
         IntegratorBundle,
-        _deployed_path_entry,
-        _skill_bundle_file_entries,
         integrate_package_primitives,
     )
     from ...install.target_filter import resolve_effective_package_targets
