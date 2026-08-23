@@ -160,6 +160,7 @@ download -> authorize deploy set -> scan selected files -> block or deploy -> re
 - **Warnings are non-blocking.** Zero-width characters are flagged in the diagnostics summary. Files are deployed normally.
 - **`--force` overrides the block.** Consistent with existing collision semantics — an explicit "I know what I'm doing."
 - **Multi-package installs continue.** A blocked package doesn't stop other packages from installing. After all packages are processed, `apm install` exits with code 1 if any package was blocked — failing the CI step.
+- **Removal reconciliation uses the same gate.** When `apm uninstall` or `apm prune` rebuilds surviving package integrations, a hostile survivor is left undeployed and the command warns. Fix the reported package source, then run `apm install` to rebuild its files.
 
 ### Compile and pack scanning
 

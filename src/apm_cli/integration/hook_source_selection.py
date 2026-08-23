@@ -146,6 +146,7 @@ def select_hook_sources(
     all_descriptors = set(hook_files)
     descriptors_by_target: dict[str, frozenset[Path]] = {}
     bundles_by_target: dict[str, frozenset[Path]] = {}
+    parsed_hooks: dict[Path, dict | None] = {}
     supported_targets = {"copilot", "kiro", *merge_target_names}
 
     for target_name in dict.fromkeys(target_names):
@@ -161,7 +162,9 @@ def select_hook_sources(
         descriptors_by_target[target_name] = frozenset(descriptors)
         source_roots: set[Path] = set()
         for hook_file in descriptors:
-            data = parse_hook_json(hook_file)
+            if hook_file not in parsed_hooks:
+                parsed_hooks[hook_file] = parse_hook_json(hook_file)
+            data = parsed_hooks[hook_file]
             if data is None:
                 continue
             for source_file in _referenced_hook_source_files(

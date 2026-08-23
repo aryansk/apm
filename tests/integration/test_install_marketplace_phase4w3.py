@@ -315,7 +315,7 @@ class TestPreDeploySecurityScan:
             )
         assert result is False
         mock_logger.error.assert_called_once()
-        mock_logger.tree_item.assert_called()
+        mock_logger.error_detail.assert_called()
 
     def test_blocking_verdict_returns_false_without_logger(self, tmp_path: Path) -> None:
         from apm_cli.install.helpers.security_scan import _pre_deploy_security_scan

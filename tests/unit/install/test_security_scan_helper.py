@@ -22,6 +22,7 @@ def _make_verdict(
     verdict = MagicMock()
     verdict.has_findings = has_findings
     verdict.should_block = should_block
+    verdict.findings_by_file = {}
     return verdict
 
 
@@ -106,6 +107,7 @@ class TestPreDeploySecurityScan:
 
     def test_logger_error_items_when_blocking(self, tmp_path: Path) -> None:
         verdict = _make_verdict(has_findings=True, should_block=True)
+        verdict.findings_by_file = {"skills/review/SKILL.md": [MagicMock()]}
         diag = DiagnosticCollector()
         logger = MagicMock()
 
@@ -117,10 +119,31 @@ class TestPreDeploySecurityScan:
 
         assert logger.tree_item.call_count == 0
         assert logger.error.call_count == 1
-        assert logger.error_detail.call_count == 2
+        assert logger.error_detail.call_count == 3
         messages = [call.args[0] for call in logger.error_detail.call_args_list]
+        assert any("skills/review/SKILL.md" in message for message in messages)
         assert any("Fix the reported file(s)" in message for message in messages)
         assert any("Use --force only after reviewing" in message for message in messages)
+
+    def test_blocking_package_name_is_printable_ascii(self, tmp_path: Path) -> None:
+        verdict = _make_verdict(has_findings=True, should_block=True)
+        diag = DiagnosticCollector()
+        logger = MagicMock()
+
+        with (
+            patch(_GATE_SCAN, return_value=verdict),
+            patch(_GATE_REPORT),
+        ):
+            _pre_deploy_security_scan(
+                _plan(tmp_path),
+                diag,
+                package_name="unsafe\u202ename",
+                logger=logger,
+            )
+
+        message = logger.error.call_args.args[0]
+        assert "\u202e" not in message
+        assert all(ord(character) < 128 for character in message)
 
     def test_no_logger_calls_when_logger_is_none(self, tmp_path: Path) -> None:
         """When logger=None, no AttributeError is raised."""

@@ -257,7 +257,8 @@ deployable_plan_duplicate_hits=$(
 )
 if [ "$deployable_plan_definition_count" -ne 1 ] \
     || ! grep -q 'source_plan = DeployableSourcePlan.create(' src/apm_cli/install/services.py \
-    || ! grep -q 'paths=source_plan.paths' src/apm_cli/install/helpers/security_scan.py \
+    || ! grep -q 'source_plan.scan_security(' src/apm_cli/install/helpers/security_scan.py \
+    || ! grep -q 'paths=self.paths' "$deployable_plan_owner" \
     || ! grep -q 'source_plan=source_plan' src/apm_cli/install/services.py \
     || ! grep -q 'integrate_package_primitives(' src/apm_cli/commands/uninstall/engine.py \
     || grep -q 'integrate_package_skill(' src/apm_cli/commands/uninstall/engine.py \

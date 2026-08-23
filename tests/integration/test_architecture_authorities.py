@@ -433,7 +433,7 @@ def test_agent_plugin_component_ir_mutations_are_killed(
             "native deployment boundary must fail closed",
         ),
         (
-            "src/apm_cli/integration/skill_integrator.py",
+            "src/apm_cli/integration/skill_package_routing.py",
             "        PackageType.SKILL_BUNDLE,\n        PackageType.MARKETPLACE_PLUGIN,",
             "        PackageType.SKILL_BUNDLE,\n"
             "        PackageType.AGENT_PLUGIN,\n"
@@ -638,6 +638,7 @@ def test_agent_plugin_projection_guard_rejects_bypass(
         "src/apm_cli/install/phases/integrate.py",
         "src/apm_cli/install/local_bundle_handler.py",
         "src/apm_cli/integration/skill_integrator.py",
+        "src/apm_cli/integration/skill_package_routing.py",
         "src/apm_cli/marketplace/resolver.py",
         "src/apm_cli/policy/ci_checks.py",
         "src/apm_cli/commands/uninstall/cli.py",
@@ -693,7 +694,8 @@ def test_deployable_source_paths_have_single_authorized_plan() -> None:
 
     assert owner.count("class DeployableSourcePlan:") == 1
     assert "source_plan = DeployableSourcePlan.create(" in services
-    assert "paths=source_plan.paths" in scanner
+    assert "source_plan.scan_security(" in scanner
+    assert "paths=self.paths" in owner
     assert "source_plan=source_plan" in services
     assert "source_plan.copy_ignore" in skills
     assert "from apm_cli.install.exec_gate import plugin_bin_deployable" in skills

@@ -314,13 +314,9 @@ def copy_skill_to_target(
     if source_path != source_plan.source_root:
         raise ValueError("copy_skill_to_target source_path must match source_plan.source_root")
 
-    from apm_cli.security.gate import BLOCK_POLICY, SecurityGate
+    from apm_cli.security.gate import BLOCK_POLICY
 
-    verdict = SecurityGate.scan_files(
-        source_plan.source_root,
-        policy=BLOCK_POLICY,
-        paths=source_plan.paths,
-    )
+    verdict = source_plan.scan_security(policy=BLOCK_POLICY)
     if verdict.should_block:
         return []
 
@@ -1448,6 +1444,7 @@ class SkillIntegrator(BaseIntegrator):
                     force=force,
                     logger=logger,
                     trust_bin=trust_bin,
+                    skip_bin=skip_bin,
                     source_plan=source_plan,
                 )
 
@@ -1568,6 +1565,7 @@ class SkillIntegrator(BaseIntegrator):
         force: bool = False,
         logger=None,
         trust_bin: bool | None = None,
+        skip_bin: bool = True,
         source_plan=None,
     ) -> tuple[list[Path], str | None]:
         """Deploy bin/ executables and plugin manifest for a MARKETPLACE_PLUGIN.
@@ -1625,7 +1623,7 @@ class SkillIntegrator(BaseIntegrator):
                 project_root=project_root,
                 scope=scope,
                 policy=policy,
-                skip_bin=False,
+                skip_bin=skip_bin,
             )
         if not deployable:
             if scope is InstallScope.PROJECT:

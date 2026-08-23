@@ -146,7 +146,10 @@ class DeployableSourcePlan:
 
         if "skills" in target_primitives:
             source_skill = source_root / "SKILL.md"
-            if _is_safe_source_path(source_skill, source_root) and source_skill.is_file():
+            has_root_skill = (
+                _is_safe_source_path(source_skill, source_root) and source_skill.is_file()
+            )
+            if has_root_skill:
                 for path in tree_files(source_root):
                     relative = path.relative_to(source_root)
                     if (
@@ -161,6 +164,8 @@ class DeployableSourcePlan:
             selected_skill_names = frozenset(selected) if selected is not None else None
             for skills_root in (source_root / "skills", source_root / ".apm" / "skills"):
                 if not _is_safe_source_path(skills_root, source_root) or not skills_root.is_dir():
+                    continue
+                if has_root_skill and selected is None and skills_root == source_root / "skills":
                     continue
                 candidates = (
                     (skills_root / name for name in sorted(selected))
@@ -196,6 +201,17 @@ class DeployableSourcePlan:
     def includes(self, relative_path: str) -> bool:
         """Return whether a portable source-relative path is authorized."""
         return relative_path.replace("\\", "/") in self.paths
+
+    def scan_security(self, *, policy, force: bool = False):
+        """Scan exactly the source files authorized by this plan."""
+        from apm_cli.security.gate import SecurityGate
+
+        return SecurityGate.scan_files(
+            self.source_root,
+            policy=policy,
+            force=force,
+            paths=self.paths,
+        )
 
     def copy_ignore(self, directory: str, contents: list[str]) -> list[str]:
         """Return source entries excluded from a skill copy by this plan."""

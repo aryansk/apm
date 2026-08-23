@@ -4,7 +4,7 @@ from typing import Any
 
 from apm_cli.install.deployable_source_plan import DeployableSourcePlan
 from apm_cli.install.exec_gate import check_executable_approval
-from apm_cli.security.gate import BLOCK_POLICY, SecurityGate
+from apm_cli.security.gate import BLOCK_POLICY
 
 
 def build_hook_reintegration_source_plan(
@@ -27,11 +27,7 @@ def build_hook_reintegration_source_plan(
         canvas_approved=False,
         skip_bin=True,
     )
-    verdict = SecurityGate.scan_files(
-        source_plan.source_root,
-        policy=BLOCK_POLICY,
-        paths=source_plan.paths,
-    )
+    verdict = source_plan.scan_security(policy=BLOCK_POLICY)
     if verdict.should_block:
         raise ValueError(
             f"Refusing to rebuild hooks for {dep_ref.get_identity()}: "
