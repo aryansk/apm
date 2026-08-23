@@ -168,6 +168,10 @@ use `ADO_APM_PAT`, and use the portless root-hosted
 use the Azure CLI bearer. See
 [authentication](../../getting-started/authentication/#azure-devops).
 
+Percent-encode ADO path spaces, for example `My%20Projects`. The generated
+URL keeps that encoded spelling, while APM uses the decoded organization,
+project, and repository identity for resolution and authentication.
+
 Before:
 
 ```yaml

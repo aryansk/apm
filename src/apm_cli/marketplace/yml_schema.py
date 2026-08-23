@@ -39,7 +39,11 @@ from typing import Any, Mapping  # noqa: UP035
 
 import yaml
 
-from ..utils.path_security import PathTraversalError, validate_path_segments
+from ..utils.path_security import (
+    PathTraversalError,
+    decode_url_path_segments,
+    validate_path_segments,
+)
 from .errors import MarketplaceYmlError
 from .output_profiles import MARKETPLACE_OUTPUTS, known_output_names
 
@@ -95,9 +99,10 @@ _HOST_PAT = r"(?:[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?\.)+[A-Za-z][A-Za-z0-9-
 # validate_path_segments(), which rejects empty, '.', and '..' path segments.
 _SEGMENT_PAT = r"[A-Za-z0-9._-]+"
 _OWNER_REPO_PAT = rf"{_SEGMENT_PAT}/{_SEGMENT_PAT}"
-_HTTPS_REPOSITORY_PAT = rf"{_SEGMENT_PAT}(?:/{_SEGMENT_PAT})+"
+_URL_SEGMENT_PAT = r"(?:[A-Za-z0-9._-]|%[0-9A-Fa-f]{2})+"
+_HTTPS_REPOSITORY_PAT = rf"{_URL_SEGMENT_PAT}(?:/{_URL_SEGMENT_PAT})+"
 _RELATIVE_SOURCE_PAT = rf"{_SEGMENT_PAT}(?:/{_SEGMENT_PAT})*"
-_SOURCE_BASE_SEGMENT_PAT = r"(?:[A-Za-z0-9._-]|%[0-9A-Fa-f]{2})+"
+_SOURCE_BASE_SEGMENT_PAT = _URL_SEGMENT_PAT
 _SOURCE_BASE_PATH_PAT = rf"{_SOURCE_BASE_SEGMENT_PAT}(?:/{_SOURCE_BASE_SEGMENT_PAT})*"
 
 SOURCE_RE = re.compile(
@@ -361,6 +366,8 @@ class PackageEntry:
     # ``host.tld/owner/repo``. ``None`` means use the default host
     # (``GITHUB_HOST`` env or ``github.com``).
     host: str | None = None
+    # Original full HTTPS source retained for encoded output presentation.
+    source_url: str | None = None
 
 
 @dataclass(frozen=True)
@@ -498,6 +505,10 @@ def validate_source_value(
             raise _source_error(context, source, source_base=source_base)
     is_local = bool(LOCAL_SOURCE_RE.match(source))
     try:
+        if source.startswith("https://"):
+            parsed = _urlparse.urlparse(source)
+            decode_url_path_segments(parsed.path, context=context)
+            return
         # Local paths legitimately start with ``.`` (current dir) and
         # may have trailing-slash forms like ``./``.  Allow ``.`` here.
         validate_path_segments(source, context=context, allow_current_dir=is_local)
@@ -525,8 +536,8 @@ def parse_source_base(raw: Any) -> str | None:
     if not raw_source_base.startswith("https://"):
         raise MarketplaceYmlError("'sourceBase' must start with https://")
 
-    parsed = _urlparse.urlparse(raw_source_base)
-    source_base = raw_source_base.rstrip("/")
+    source_base = raw_source_base.removesuffix("/")
+    parsed = _urlparse.urlparse(source_base)
     if parsed.username or parsed.password or "@" in parsed.netloc:
         raise MarketplaceYmlError("'sourceBase' must not include userinfo")
     if ":" in parsed.netloc:
@@ -540,13 +551,8 @@ def parse_source_base(raw: Any) -> str | None:
     if source_base.endswith(".git"):
         raise MarketplaceYmlError("'sourceBase' must not end with .git")
 
-    path = parsed.path.lstrip("/")
-    if path.endswith("/"):
-        path = path[:-1]
-    if not path:
-        raise MarketplaceYmlError("'sourceBase' must include at least one path segment")
     try:
-        validate_path_segments(path, context="sourceBase", reject_empty=True)
+        decode_url_path_segments(parsed.path, context="sourceBase")
     except PathTraversalError as exc:
         raise MarketplaceYmlError(str(exc)) from exc
     if not SOURCE_BASE_RE.match(source_base):
@@ -555,27 +561,6 @@ def parse_source_base(raw: Any) -> str | None:
             "or percent-encoded bytes"
         )
 
-    decoded_segments: list[str] = []
-    for segment in path.split("/"):
-        try:
-            decoded = _urlparse.unquote_to_bytes(segment).decode("utf-8")
-        except UnicodeDecodeError as exc:
-            raise MarketplaceYmlError(
-                "'sourceBase' contains invalid UTF-8 percent-encoding"
-            ) from exc
-        if "/" in decoded or "\\" in decoded:
-            raise MarketplaceYmlError(
-                "'sourceBase' percent-encoding must not decode to a path separator"
-            )
-        decoded_segments.append(decoded)
-    try:
-        validate_path_segments(
-            "/".join(decoded_segments),
-            context="sourceBase",
-            reject_empty=True,
-        )
-    except PathTraversalError as exc:
-        raise MarketplaceYmlError(str(exc)) from exc
     return source_base
 
 
@@ -842,6 +827,7 @@ def _parse_package_entry(
     is_local = bool(LOCAL_SOURCE_RE.match(source))
     # Detect host-prefixed source (e.g. ``host.tld/owner/repo``) and split
     # the host off so downstream consumers continue to see ``owner/repo``.
+    source_url = source if source.startswith("https://") else None
     host: str | None = None
     if not is_local:
         host, source = split_host_from_source(source)
@@ -998,6 +984,7 @@ def _parse_package_entry(
         category=category,
         is_local=is_local,
         host=host,
+        source_url=source_url,
     )
 
 
