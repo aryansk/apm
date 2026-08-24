@@ -131,6 +131,7 @@ class DownloadDelegate:
         *,
         stream: bool = False,
         retry_throttles: bool = True,
+        allow_redirects: bool = True,
     ) -> requests.Response:
         """HTTP GET with selectable retries for transient HTTP failures.
 
@@ -143,6 +144,7 @@ class DownloadDelegate:
             retry_throttles: Whether general callers retry a classified
                 throttle. Virtual-file download callers disable this so they
                 can select sparse Git without a retry or sleep.
+            allow_redirects: Whether to follow HTTP redirects.
 
         Returns:
             requests.Response (caller should call .raise_for_status() as needed)
@@ -154,7 +156,13 @@ class DownloadDelegate:
         last_response = None
         for attempt in range(max_retries):
             try:
-                response = requests.get(url, headers=headers, timeout=timeout, stream=stream)
+                response = requests.get(
+                    url,
+                    headers=headers,
+                    timeout=timeout,
+                    stream=stream,
+                    allow_redirects=allow_redirects,
+                )
 
                 throttle = github_throttle_error(response, "GitHub API")
                 if throttle is not None:
@@ -423,7 +431,13 @@ class DownloadDelegate:
             _debug(f"Trying Artifactory archive: {url}")
             resp = None
             try:
-                resp = self._host._resilient_get(url, headers=headers, timeout=60, stream=True)
+                resp = self._host._resilient_get(
+                    url,
+                    headers=headers,
+                    timeout=60,
+                    stream=True,
+                    allow_redirects=False,
+                )
                 if resp.status_code == 200:
                     target_path.mkdir(parents=True, exist_ok=True)
                     with tempfile.TemporaryDirectory(dir=get_apm_temp_dir()) as temp_dir:

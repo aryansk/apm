@@ -13,19 +13,25 @@ import shutil
 import tempfile
 import zipfile
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import MagicMock, Mock, patch
 from urllib.parse import urlparse
 
 import pytest
 
 from apm_cli.core.token_manager import GitHubTokenManager
+from apm_cli.deps.artifactory_orchestrator import ArtifactoryOrchestrator
+from apm_cli.deps.download_strategies import DownloadDelegate
 from apm_cli.deps.github_downloader import GitHubPackageDownloader
+from apm_cli.deps.lockfile import LockedDependency, LockFile
+from apm_cli.drift import build_download_ref
 from apm_cli.models.apm_package import (
     DependencyReference,
     GitReferenceType,
     ResolvedReference,
 )
 from apm_cli.utils.archive import safe_extract_zip
+from apm_cli.utils.content_hash import compute_package_hash
 from apm_cli.utils.github_host import (
     build_artifactory_archive_url,
     is_artifactory_path,
@@ -44,6 +50,15 @@ def _mock_stream_response(
     resp.headers = headers or {}
     resp.iter_content.return_value = iter([content] if content else [])
     return resp
+
+
+def _archive_response(status_code: int, content: bytes = b"") -> MagicMock:
+    """Return a response double compatible with streamed archive downloads."""
+    response = MagicMock()
+    response.status_code = status_code
+    response.headers = {"Content-Length": str(len(content))}
+    response.iter_content.return_value = iter([content] if content else [])
+    return response
 
 
 # ── github_host.py: Artifactory path helpers ──
@@ -1366,6 +1381,131 @@ class TestArtifactoryEdgeCases:
                 assert term.lower() not in content.lower(), (
                     f"Found forbidden term '{term}' in {py_file}"
                 )
+
+
+class TestFrozenArtifactoryCommitReplay:
+    """Regression coverage for immutable Artifactory archive replay."""
+
+    def test_frozen_replay_reaches_generic_commit_archive_via_proxy(self, tmp_path: Path) -> None:
+        """A locked tag replays its SHA through only the final proxy candidate."""
+        commit = "a" * 40
+        owner = "testorg"
+        repo = "testrepo"
+        prefix = "artifactory/github"
+        host_name = "art.example.com"
+        manifest_ref = DependencyReference(
+            repo_url=f"{owner}/{repo}",
+            host="github.com",
+            reference="v1.2.3",
+        )
+
+        source = tmp_path / "source"
+        (source / ".apm" / "instructions").mkdir(parents=True)
+        (source / "apm.yml").write_bytes(b"name: immutable-proxy-test\nversion: 1.0.0\n")
+        (source / ".apm" / "instructions" / "immutable.md").write_bytes(b"immutable bytes\n")
+        content_hash = compute_package_hash(source)
+
+        locked = LockedDependency(
+            repo_url=f"{owner}/{repo}",
+            host=host_name,
+            registry_prefix=prefix,
+            resolved_ref="v1.2.3",
+            resolved_commit=commit,
+            content_hash=content_hash,
+            package_type="apm_package",
+            depth=1,
+        )
+        lockfile = LockFile()
+        lockfile.add_dependency(locked)
+        lock_path = tmp_path / "apm.lock.yaml"
+        lockfile.write(lock_path)
+        lock_before = lock_path.read_bytes()
+
+        frozen_ref = build_download_ref(
+            manifest_ref,
+            lockfile,
+            update_refs=False,
+            ref_changed=False,
+        )
+        assert frozen_ref.reference == commit
+        assert frozen_ref.host == host_name
+        assert frozen_ref.artifactory_prefix == prefix
+
+        archive = io.BytesIO()
+        with zipfile.ZipFile(archive, "w") as archive_zip:
+            archive_zip.writestr(f"{repo}-{commit}/", "")
+            archive_zip.writestr(
+                f"{repo}-{commit}/apm.yml",
+                b"name: immutable-proxy-test\nversion: 1.0.0\n",
+            )
+            archive_zip.writestr(
+                f"{repo}-{commit}/.apm/instructions/immutable.md",
+                b"immutable bytes\n",
+            )
+        archive_bytes = archive.getvalue()
+
+        expected_urls = build_artifactory_archive_url(
+            host_name,
+            prefix,
+            owner,
+            repo,
+            commit,
+        )
+        request_calls: list[tuple[str, dict[str, str], dict[str, object]]] = []
+
+        def proxy_get(url: str, headers: dict[str, str], **kwargs: object) -> MagicMock:
+            request_calls.append((url, headers, kwargs))
+            if url == expected_urls[-1]:
+                return _archive_response(200, archive_bytes)
+            return _archive_response(404)
+
+        registry_config = MagicMock()
+        registry_config.get_headers.return_value = {"Authorization": "Bearer proxy-test-token"}
+        proxy_host = MagicMock()
+        proxy_host.registry_config = registry_config
+        proxy_host.artifactory_token = None
+        proxy_host._resilient_get.side_effect = proxy_get
+
+        result = ArtifactoryOrchestrator(DownloadDelegate(proxy_host)).download_package(
+            frozen_ref,
+            tmp_path / "cold-cache",
+            proxy_info=(host_name, prefix, "https"),
+        )
+
+        assert [url for url, _, _ in request_calls] == list(expected_urls)
+        assert urlparse(request_calls[-1][0]).path == (
+            f"/{prefix}/{owner}/{repo}/archive/{commit}.zip"
+        )
+        assert {urlparse(url).hostname for url, _, _ in request_calls} == {host_name}
+        assert all(
+            headers == {"Authorization": "Bearer proxy-test-token"}
+            for _, headers, _ in request_calls
+        )
+        assert all(kwargs["allow_redirects"] is False for _, _, kwargs in request_calls)
+        assert all(kwargs["stream"] is True for _, _, kwargs in request_calls)
+        assert result.resolved_reference.ref_type == GitReferenceType.COMMIT
+        assert result.resolved_reference.resolved_commit == commit
+        assert result.package.resolved_commit == commit
+        assert compute_package_hash(result.install_path) == content_hash
+        assert (result.install_path / ".apm" / "instructions" / "immutable.md").read_bytes() == (
+            b"immutable bytes\n"
+        )
+        assert lock_path.read_bytes() == lock_before
+
+        replayed = LockedDependency.from_dependency_ref(
+            manifest_ref,
+            result.resolved_reference.resolved_commit,
+            depth=1,
+            resolved_by=None,
+            registry_config=SimpleNamespace(host=host_name, prefix=prefix),
+        )
+        replayed.content_hash = content_hash
+        replayed.package_type = "apm_package"
+        replayed_lockfile = LockFile(generated_at=lockfile.generated_at)
+        replayed_lockfile.add_dependency(replayed)
+        replayed_lock_path = tmp_path / "replayed.lock.yaml"
+        replayed_lockfile.write(replayed_lock_path)
+        assert replayed_lock_path.read_bytes() == lock_before
 
 
 # -- PROXY_REGISTRY_ONLY mode tests --

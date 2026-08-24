@@ -30,6 +30,7 @@ reuse benefit.
 
 from __future__ import annotations
 
+import re
 import tempfile
 from datetime import datetime
 from pathlib import Path
@@ -227,11 +228,14 @@ class ArtifactoryOrchestrator:
 
         validation_result = validate_apm_package(target_path)
         package = _validate_and_load_package(validation_result, target_path, dep_ref)
-        package.resolved_commit = None
+        resolved_commit = ref if re.fullmatch(r"[0-9a-fA-F]{40}", ref) else None
+        package.resolved_commit = resolved_commit
         resolved_ref = ResolvedReference(
             original_ref=f"{dep_ref.repo_url}#{ref}",
-            ref_type=GitReferenceType.BRANCH,
-            resolved_commit=None,
+            ref_type=(
+                GitReferenceType.COMMIT if resolved_commit is not None else GitReferenceType.BRANCH
+            ),
+            resolved_commit=resolved_commit,
             ref_name=ref,
         )
         self._progress(progress_obj, progress_task_id, completed=100)
