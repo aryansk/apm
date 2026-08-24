@@ -483,6 +483,12 @@ def validate_source_value(
     source_base: str | None = None,
 ) -> None:
     """Validate a package ``source`` field shape and path safety."""
+    if source.startswith("https://") and "%" in _urlparse.urlparse(source).path:
+        try:
+            decode_url_path_segments(_urlparse.urlparse(source).path, context=context)
+        except PathTraversalError as exc:
+            raise MarketplaceYmlError(str(exc)) from exc
+
     matches_existing_shape = bool(SOURCE_RE.match(source))
     if not matches_existing_shape:
         # The source matched no supported shape. If its first segment looks

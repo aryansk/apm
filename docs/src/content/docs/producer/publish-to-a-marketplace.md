@@ -154,10 +154,10 @@ onto it and the `dev.azure.com` host is kept on the consumer side:
 
 ```yaml
 marketplace:
-  sourceBase: https://dev.azure.com/contoso/platform/_git
+  sourceBase: https://dev.azure.com/contoso/My%20Projects/_git
   packages:
     - name: agent-skills
-      source: agent-skills          # -> .../contoso/platform/_git/agent-skills
+      source: agent-skills          # -> .../contoso/My%20Projects/_git/agent-skills
       ref: 3f2a9b1c
 ```
 

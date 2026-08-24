@@ -524,18 +524,18 @@ class TestSourceBaseBuildComposition:
         assert auth.calls == [("dev.azure.com", "contoso")]
 
     @pytest.mark.parametrize(
-        "source",
+        ("source", "error"),
         [
-            "https://dev.azure.com/contoso/%/_git/repo",
-            "https://dev.azure.com/contoso/%FF/_git/repo",
-            "https://dev.azure.com/contoso/%2F/_git/repo",
-            "https://dev.azure.com/contoso/%252E%252E/_git/repo",
+            ("https://dev.azure.com/contoso/%/_git/repo", "malformed percent-encoding"),
+            ("https://dev.azure.com/contoso/%FF/_git/repo", "valid UTF-8"),
+            ("https://dev.azure.com/contoso/%2F/_git/repo", "path separator"),
+            ("https://dev.azure.com/contoso/%252E%252E/_git/repo", "residual percent-encoding"),
         ],
     )
     def test_unsafe_full_https_source_is_rejected_before_resolution(
-        self, tmp_path: Path, source: str
+        self, tmp_path: Path, source: str, error: str
     ) -> None:
-        with pytest.raises(MarketplaceYmlError):
+        with pytest.raises(MarketplaceYmlError, match=error):
             _load_config(
                 tmp_path,
                 None,
