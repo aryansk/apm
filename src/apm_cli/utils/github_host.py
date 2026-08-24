@@ -1070,11 +1070,7 @@ def build_artifactory_archive_url(
         f"{base}/zip/refs/tags/{ref}",
         # Frozen installs resolve refs to a full commit SHA. Artifactory proxies
         # expose that immutable object through GitHub's generic commit archive path.
-        *(
-            (f"{base}/archive/{ref}.zip",)
-            if re.fullmatch(r"[0-9a-fA-F]{40}", ref)
-            else ()
-        ),
+        *((f"{base}/archive/{ref}.zip",) if re.fullmatch(r"[0-9a-fA-F]{40}", ref) else ()),
     )
 
 
