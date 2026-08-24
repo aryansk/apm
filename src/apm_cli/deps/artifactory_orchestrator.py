@@ -191,6 +191,13 @@ class ArtifactoryOrchestrator:
         if progress_obj and progress_task_id is not None:
             progress_obj.update(progress_task_id, completed=completed, total=total)
 
+    @staticmethod
+    def _resolved_commit_metadata(ref: str) -> tuple[GitReferenceType, str | None]:
+        """Classify an archive ref for lockfile-safe resolution metadata."""
+        if re.fullmatch(r"[0-9a-fA-F]{40}", ref):
+            return GitReferenceType.COMMIT, ref
+        return GitReferenceType.BRANCH, None
+
     # -- public surface -------------------------------------------------
 
     def download_package(
@@ -228,13 +235,11 @@ class ArtifactoryOrchestrator:
 
         validation_result = validate_apm_package(target_path)
         package = _validate_and_load_package(validation_result, target_path, dep_ref)
-        resolved_commit = ref if re.fullmatch(r"[0-9a-fA-F]{40}", ref) else None
+        ref_type, resolved_commit = self._resolved_commit_metadata(ref)
         package.resolved_commit = resolved_commit
         resolved_ref = ResolvedReference(
             original_ref=f"{dep_ref.repo_url}#{ref}",
-            ref_type=(
-                GitReferenceType.COMMIT if resolved_commit is not None else GitReferenceType.BRANCH
-            ),
+            ref_type=ref_type,
             resolved_commit=resolved_commit,
             ref_name=ref,
         )
@@ -300,11 +305,13 @@ class ArtifactoryOrchestrator:
 
         validation_result = validate_apm_package(target_path)
         package = _validate_and_load_package(validation_result, target_path, dep_ref)
+        ref_type, resolved_commit = self._resolved_commit_metadata(ref)
+        package.resolved_commit = resolved_commit
         resolved_ref = ResolvedReference(
             original_ref=ref,
             ref_name=ref,
-            ref_type=GitReferenceType.BRANCH,
-            resolved_commit=None,
+            ref_type=ref_type,
+            resolved_commit=resolved_commit,
         )
         self._progress(progress_obj, progress_task_id, completed=100)
         return PackageInfo(
