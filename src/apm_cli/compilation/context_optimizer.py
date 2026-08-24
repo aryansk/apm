@@ -508,7 +508,11 @@ class ContextOptimizer:
 
         inventory = self._inventory or CompileInventory.collect(self.base_dir)
         self._inventory = inventory
-        selected_files = set(inventory.files_under(self._scan_top_level_roots))
+        selected_files = (
+            None
+            if self._scan_top_level_roots is None
+            else set(inventory.files_under(self._scan_top_level_roots))
+        )
         for entry in inventory.directories:
             current_path = entry.path
             if not self._is_placement_path(current_path, entry.relative_path):
@@ -531,7 +535,11 @@ class ContextOptimizer:
                 total_files=len(project_files),
                 file_types={path.suffix for path in project_files},
             )
-            candidate_files = [path for path in project_files if path in selected_files]
+            candidate_files = (
+                project_files
+                if selected_files is None
+                else [path for path in project_files if path in selected_files]
+            )
             matching_files = [path for path in candidate_files if path.is_file()]
             self._file_list_cache.extend(candidate_files)
             if matching_files:

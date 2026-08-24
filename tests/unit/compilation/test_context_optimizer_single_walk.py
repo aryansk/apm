@@ -164,6 +164,29 @@ class TestCompileInventoryProjection:
         assert tmp_path / "vendor/huge.txt" in optimizer._file_list_cache
         assert tmp_path / "vendor" in optimizer._directory_cache
 
+    def test_unscoped_candidates_do_not_build_redundant_full_file_projection(
+        self, tmp_path: Path
+    ) -> None:
+        """Global fallback reuses each inventory directory's complete file list."""
+        from apm_cli.compilation.inventory import CompileInventory
+
+        _touch(tmp_path, "src/main.py")
+        _touch(tmp_path, "vendor/huge.txt")
+        inventory = CompileInventory.collect(tmp_path)
+        optimizer = ContextOptimizer(base_dir=str(tmp_path), inventory=inventory)
+
+        with patch.object(
+            CompileInventory,
+            "files_under",
+            side_effect=AssertionError("unscoped projection must reuse complete directory files"),
+        ):
+            optimizer.optimize_instruction_placement([_make_instruction(apply_to="**/*.py")])
+
+        assert set(optimizer._file_list_cache) == {
+            tmp_path / "src/main.py",
+            tmp_path / "vendor/huge.txt",
+        }
+
     def test_comma_list_unions_ten_literal_roots(self, tmp_path: Path) -> None:
         """Comma lists retain every literal root and prune unrelated siblings."""
         roots = [f"package-{index:02d}" for index in range(10)]
