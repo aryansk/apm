@@ -498,14 +498,21 @@ class DependencyReference(ProviderCoordinateMixin):
         such as ``owner/repo#package@v1.0.1`` remain valid literal refs.
         """
         stripped = dependency_str.strip()
-        if "@" not in stripped:
-            return
         if stripped.lower().startswith(("https://", "http://", "ssh://")):
             return
         if SCP_LIKE_RE.match(stripped):
             return
         shorthand_part, _, ref_part = stripped.partition("#")
-        if "@" not in shorthand_part:
+        has_encoded_alias = False
+        if "%40" in shorthand_part.lower():
+            _, decoded_segments = parse_url_path_segments(
+                shorthand_part,
+                context="repository path",
+            )
+            has_encoded_alias = any("@" in segment for segment in decoded_segments)
+        if "@" not in stripped and not has_encoded_alias:
+            return
+        if "@" not in shorthand_part and not has_encoded_alias:
             _, _, ref_suffix = ref_part.rpartition("@")
             if _REF_VERSION_SUFFIX_RE.fullmatch(ref_suffix):
                 return
