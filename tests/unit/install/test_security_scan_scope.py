@@ -243,6 +243,45 @@ def test_direct_skill_copy_normalizes_equivalent_source_alias(
     assert (deployed[0] / "SKILL.md").read_text(encoding="utf-8") == "direct skill\n"
 
 
+def test_direct_skill_copy_excludes_non_content_and_symlink_sources(tmp_path: Path) -> None:
+    """Direct skill copies retain only the canonical plan's regular content."""
+    source = tmp_path / "direct-skill"
+    source.mkdir()
+    (source / "SKILL.md").write_text("direct skill\n", encoding="utf-8")
+    (source / ".apm-pin").write_text("cache marker\n", encoding="utf-8")
+    secret = tmp_path / "secret.txt"
+    secret.write_text("secret\n", encoding="utf-8")
+    (source / "linked-secret").symlink_to(secret)
+    project = tmp_path / "project"
+    (project / ".claude").mkdir(parents=True)
+    package_info = PackageInfo(
+        package=APMPackage(name="direct-skill", version="1.0.0"),
+        install_path=source,
+        package_type=PackageType.CLAUDE_SKILL,
+    )
+    plan = DeployableSourcePlan.create(
+        _package(source),
+        [KNOWN_TARGETS["claude"]],
+        skill_subset=None,
+        hooks_approved=False,
+        canvas_approved=False,
+        skip_bin=True,
+    )
+
+    deployed = copy_skill_to_target(
+        package_info,
+        source,
+        project,
+        targets=[KNOWN_TARGETS["claude"]],
+        source_plan=plan,
+    )
+
+    assert deployed == [project / ".claude" / "skills" / "direct-skill"]
+    assert (deployed[0] / "SKILL.md").is_file()
+    assert not (deployed[0] / ".apm-pin").exists()
+    assert not (deployed[0] / "linked-secret").exists()
+
+
 def test_nested_deployable_hidden_character_blocks_without_force(tmp_path: Path) -> None:
     """A hostile selected skill is fail-closed while source-only files stay excluded."""
     skill = tmp_path / "skills" / "hostile"
