@@ -913,10 +913,15 @@ def check(root: Path) -> list[str]:  # noqa: C901, PLR0912, PLR0915
         relative = path.relative_to(root).as_posix()
         for function in _functions(tree):
             calls = _function_calls(function)
-            if "normalize_plugin_directory" in calls and not (
+            legacy_normalization_owner = (
                 relative == "src/apm_cli/models/validation.py"
                 and function.name == "_validate_marketplace_plugin"
-            ):
+            ) or (
+                relative == "src/apm_cli/install/drift.py"
+                and function.name == "_normalize_legacy_local_plugin_for_replay"
+                and "detect_agent_plugin" in calls
+            )
+            if "normalize_plugin_directory" in calls and not legacy_normalization_owner:
                 violations.append(
                     f"{relative}:{function.lineno}: Claude normalization call outside "
                     "_validate_marketplace_plugin"

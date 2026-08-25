@@ -51,6 +51,9 @@ fi
 if ! python3 scripts/check_removed_agent_plugin_lifecycle.py --root "$ROOT"; then
     violations=$((violations + 1))
 fi
+if ! python3 scripts/check_plugin_skill_declaration_authority.py "$ROOT"; then
+    violations=$((violations + 1))
+fi
 install_wrapper_defaults=$(python3 - <<'PY'
 import ast
 from pathlib import Path
@@ -136,6 +139,31 @@ if [ "$experimental_hint_definition_count" -ne 1 ] \
     [ -n "$experimental_hint_duplicate_hits" ] && echo "$experimental_hint_duplicate_hits"
     violations=$((violations + 1))
 fi
+network_host_owner="src/apm_cli/utils/net.py"
+network_host_definition_count=$(grep -Ec \
+    '^def (parse_host_address|is_loopback_host)\(' "$network_host_owner" || true)
+network_host_duplicate_hits=$(
+    grep -rEn --include='*.py' \
+        '^def (_host_to_ip_literal|parse_host_address|is_loopback_host)\(' \
+        src/apm_cli \
+        | grep -v "^${network_host_owner}:" \
+        | grep -v 'architecture-authority-exempt:' \
+        || true
+)
+if [ "$network_host_definition_count" -ne 2 ] \
+    || ! grep -q 'from ..utils.net import parse_host_address' \
+        src/apm_cli/core/script_executors.py \
+    || ! grep -q 'literal = parse_host_address(host)' \
+        src/apm_cli/core/script_executors.py \
+    || ! grep -q 'from ...utils.net import parse_host_address' \
+        src/apm_cli/install/mcp/warnings.py \
+    || ! grep -q 'ip = parse_host_address(bare)' \
+        src/apm_cli/install/mcp/warnings.py \
+    || [ -n "$network_host_duplicate_hits" ]; then
+    echo "[x] Network host parsing and loopback classification must use utils/net.py"
+    [ -n "$network_host_duplicate_hits" ] && echo "$network_host_duplicate_hits"
+    violations=$((violations + 1))
+fi
 agent_plugin_loader="src/apm_cli/agent_plugins/loader.py"
 agent_plugin_component_output=$(python3 scripts/check_agent_plugin_component_ir.py 2>&1)
 agent_plugin_component_status=$?
@@ -146,6 +174,13 @@ if [ "$agent_plugin_component_status" -ne 0 ]; then
 fi
 
 echo "[*] AC2: validate-before-mutate boundaries"
+generated_bundle_writer_output=$(python3 scripts/check_generated_bundle_text_writers.py 2>&1)
+generated_bundle_writer_status=$?
+if [ "$generated_bundle_writer_status" -ne 0 ]; then
+    echo "[x] Generated bundle metadata writes must use deterministic LF"
+    echo "$generated_bundle_writer_output"
+    violations=$((violations + 1))
+fi
 compiled_write_hits=$(
     grep -rEn \
         'write_text_lf|atomic_write_text|\.write_text\(|open\([^)]*["'\'']w' \
@@ -1002,6 +1037,17 @@ if ! grep -q 'transport_plan = transport_selector.select(' "$semver_transport_ro
     echo "[x] Git ref transport must route through TransportSelector into RefResolver"
     violations=$((violations + 1))
 fi
+git_semver_eligibility_owner="src/apm_cli/install/helpers/ref_reuse.py"
+git_semver_ingress="src/apm_cli/commands/install.py"
+if [ "$(grep -Ec '^def is_git_semver_resolution_eligible\(' "$git_semver_eligibility_owner")" -ne 1 ] \
+    || ! grep -q 'if not is_git_semver_resolution_eligible(dep_ref):' \
+        "$git_semver_eligibility_owner" \
+    || ! grep -q 'is_git_semver_resolution_eligible(dep_ref)' "$git_semver_ingress" \
+    || grep -Eq 'dep_ref\.ref_kind[[:space:]]*==[[:space:]]*["'\'']semver["'\'']' \
+        "$git_semver_ingress"; then
+    echo "[x] Git semver preflight eligibility must route through ref_reuse.py"
+    violations=$((violations + 1))
+fi
 
 echo "[*] AC14: ADO lock-coordinate authority"
 if ! grep -q 'with_derived_provider_coordinates' \
@@ -1734,6 +1780,12 @@ if [ "$mcp_runtime_variable_owner_defs" -ne 1 ] \
     || ! grep -q '^    def _substitute_runtime_variables(' "$mcp_container_owner" \
     || ! grep -q 'cls\._substitute_runtime_variables(' src/apm_cli/adapters/client/vscode.py; then
     echo "[x] MCP runtime argument variables must route through MCPClientAdapter"
+    violations=$((violations + 1))
+fi
+
+echo "[*] AC34: hash-visible generated files use canonical LF writers"
+if ! python3 scripts/check_hash_visible_lf_writes.py; then
+    echo "[x] Hash-visible generated files must route through canonical LF writers"
     violations=$((violations + 1))
 fi
 

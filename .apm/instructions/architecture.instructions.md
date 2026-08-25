@@ -65,6 +65,7 @@ semicolon-delimited, and specific to the file(s) that own the fact.
 | CI audit scratch materialization | install/audit_replay.py (prepare_ci_audit_replay) | `src/apm_cli/install/audit_replay.py` |
 | GitHub API throttle classification | deps/github_rate_limit.py | `src/apm_cli/deps/github_rate_limit.py` |
 | Git ref freshness and cache eligibility | deps/tiered_ref_resolver.py (RefFreshnessPolicy) | `src/apm_cli/deps/tiered_ref_resolver.py` |
+| Git semver preflight eligibility and resolution | install/helpers/ref_reuse.py (is_git_semver_resolution_eligible / maybe_resolve_git_semver) | `src/apm_cli/install/helpers/ref_reuse.py` |
 | Root vs dependency MCP declaration scope | integration/mcp_config_view.py (CurrentMcpConfigView) | `src/apm_cli/integration/mcp_config_view.py` |
 | MCP package launcher selection and argv shape (container and non-container) | adapters/client/base.py (MCPClientAdapter) | `src/apm_cli/adapters/client/base.py` |
 | Dependency CLI identifier parsing + uninstall selection | models/dependency/selection.py (via DependencyReference) | `src/apm_cli/models/dependency/selection.py` |
@@ -80,6 +81,8 @@ semicolon-delimited, and specific to the file(s) that own the fact.
 | Agent Plugin producer portable-surface admission | bundle/agent_plugin_exporter.py (_require_portable_agent_plugin) | `src/apm_cli/bundle/agent_plugin_exporter.py` |
 | APMPackage interpreted-manifest construction | models/apm_package.py (APMPackage.from_mapping) | `src/apm_cli/models/apm_package.py` |
 | Agent Plugin compatibility package projection | agent_plugins/projection.py (project_agent_plugin_package) | `src/apm_cli/agent_plugins/projection.py`; `src/apm_cli/models/validation.py` |
+| Network host literal parsing and loopback classification | utils/net.py (parse_host_address, is_loopback_host) | `src/apm_cli/utils/net.py` |
+| Legacy plugin declared-skill membership | deps/plugin_parser.py (_map_plugin_artifacts, normalized_plugin_skill_sources) | `src/apm_cli/deps/plugin_parser.py`; `src/apm_cli/integration/skill_integrator.py` |
 <!-- /canonical-owner-table -->
 
 Host + credential resolution includes public github.com anonymous-first ordering.

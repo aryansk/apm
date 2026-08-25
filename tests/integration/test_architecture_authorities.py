@@ -14,6 +14,21 @@ from types import ModuleType
 import pytest
 
 
+def test_generated_bundle_text_writes_are_lf_deterministic() -> None:
+    """Generated bundle text must route through the checked LF boundary."""
+    root = Path(__file__).parents[2]
+    result = subprocess.run(
+        (sys.executable, "scripts/check_generated_bundle_text_writers.py", "--root", str(root)),
+        cwd=root,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "generated bundle text writers use deterministic LF" in result.stdout
+
+
 def test_removed_agent_plugin_lifecycle_tombstone_passes() -> None:
     root = Path(__file__).parents[2]
     result = subprocess.run(
@@ -64,6 +79,24 @@ def test_uninstall_reintegration_routes_through_the_deployable_source_plan() -> 
     assert (
         "Deployable hook paths must route through the shared target-aware source selector" in guard
     )
+
+
+def test_git_semver_preflight_eligibility_has_single_owner() -> None:
+    """Positional ingress must consume, not duplicate, git-semver eligibility."""
+    root = Path(__file__).parents[2]
+    owner = (root / "src/apm_cli/install/helpers/ref_reuse.py").read_text(encoding="utf-8")
+    ingress = (root / "src/apm_cli/commands/install.py").read_text(encoding="utf-8")
+    guard = (root / "scripts/lint-architecture-boundaries.sh").read_text(encoding="utf-8")
+    architecture = (root / ".github/instructions/architecture.instructions.md").read_text(
+        encoding="utf-8"
+    )
+
+    assert owner.count("def is_git_semver_resolution_eligible(") == 1
+    assert "if not is_git_semver_resolution_eligible(dep_ref):" in owner
+    assert "is_git_semver_resolution_eligible(dep_ref)" in ingress
+    assert 'dep_ref.ref_kind == "semver"' not in ingress
+    assert "Git semver preflight eligibility must route through ref_reuse.py" in guard
+    assert "| Git semver preflight eligibility and resolution |" in architecture
 
 
 @pytest.mark.parametrize(
@@ -190,6 +223,79 @@ def test_agent_plugin_contract_has_single_owner() -> None:
     assert architecture == (root / ".apm/instructions/architecture.instructions.md").read_text(
         encoding="utf-8"
     )
+
+
+def test_plugin_skill_declaration_membership_has_single_owner() -> None:
+    """Legacy plugin parsing owns membership; integration only consumes it."""
+    root = Path(__file__).parents[2]
+    parser = (root / "src/apm_cli/deps/plugin_parser.py").read_text(encoding="utf-8")
+    integrator = root / "src/apm_cli/integration/skill_integrator.py"
+    guard = root / "scripts/check_plugin_skill_declaration_authority.py"
+    architecture = (root / ".github/instructions/architecture.instructions.md").read_text(
+        encoding="utf-8"
+    )
+
+    assert parser.count("def normalized_plugin_skill_sources(") == 1
+    assert "normalized_plugin_skill_sources(package_path)" in integrator.read_text(encoding="utf-8")
+    assert "Legacy plugin declared-skill membership" in architecture
+
+    result = subprocess.run(
+        (sys.executable, str(guard), str(root)),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+@pytest.mark.parametrize(
+    ("relative_path", "old", "new"),
+    [
+        (
+            "src/apm_cli/integration/skill_integrator.py",
+            "resolved, _ = normalized_plugin_skill_sources(package_path)",
+            'resolved = {name: package_path / "skills" / name for name in ()}',
+        ),
+        (
+            "src/apm_cli/integration/skill_integrator.py",
+            "resolved, _ = normalized_plugin_skill_sources(package_path)",
+            "resolved, _ = normalized_plugin_skill_sources(package_path)\n"
+            '            root_bundle = package_path / "skills"',
+        ),
+    ],
+)
+def test_plugin_skill_declaration_owner_guard_kills_mutations(
+    tmp_path: Path,
+    relative_path: str,
+    old: str,
+    new: str,
+) -> None:
+    root = Path(__file__).parents[2]
+    sandbox = tmp_path / "repo"
+    for path in (
+        "src/apm_cli/deps/plugin_parser.py",
+        "src/apm_cli/integration/skill_integrator.py",
+    ):
+        destination = sandbox / path
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(root / path, destination)
+    mutation_path = sandbox / relative_path
+    source = mutation_path.read_text(encoding="utf-8")
+    assert old in source
+    mutation_path.write_text(source.replace(old, new, 1), encoding="utf-8")
+
+    result = subprocess.run(
+        (
+            sys.executable,
+            str(root / "scripts/check_plugin_skill_declaration_authority.py"),
+            str(sandbox),
+        ),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 1
+    assert "Plugin skill declaration membership" in result.stdout
 
 
 @pytest.mark.parametrize(
@@ -323,6 +429,12 @@ def test_agent_plugin_component_ir_mutations_are_killed(
             "    normalize_plugin_directory(package_path, plugin_json_path)\n"
             "    result.agent_plugin = plugin",
             "Agent Plugin classification must route through its loader, not Claude normalization",
+        ),
+        (
+            "src/apm_cli/install/drift.py",
+            "if detect_agent_plugin(install_path) is not None:",
+            "if False:",
+            "Agent Plugin projection AST boundary failed",
         ),
         (
             "src/apm_cli/agent_plugins/projection.py",
@@ -632,6 +744,7 @@ def test_agent_plugin_projection_guard_rejects_bypass(
         "src/apm_cli/deps/apm_resolver.py",
         "src/apm_cli/deps/github_downloader.py",
         "src/apm_cli/deps/registry/resolver.py",
+        "src/apm_cli/install/drift.py",
         "src/apm_cli/install/services.py",
         "src/apm_cli/install/sources.py",
         "src/apm_cli/install/template.py",
@@ -878,6 +991,76 @@ def test_experimental_target_hints_have_single_owner() -> None:
     assert owner.count("def emit_disabled_experimental_target_hint(") == 1
     assert duplicate_paths == []
     assert "Experimental target hints must route through install/target_hints.py" in guard
+
+
+def test_network_host_parsing_has_single_owner() -> None:
+    """Host literal parsing and loopback classification must use utils/net.py."""
+    root = Path(__file__).parents[2]
+    owner_path = root / "src/apm_cli/utils/net.py"
+    owner = owner_path.read_text(encoding="utf-8")
+    script_executors = (root / "src/apm_cli/core/script_executors.py").read_text(encoding="utf-8")
+    mcp_warnings = (root / "src/apm_cli/install/mcp/warnings.py").read_text(encoding="utf-8")
+    guard = (root / "scripts/lint-architecture-boundaries.sh").read_text(encoding="utf-8")
+    duplicate_paths = [
+        path
+        for path in (root / "src/apm_cli").rglob("*.py")
+        if path != owner_path
+        and any(
+            definition in path.read_text(encoding="utf-8")
+            for definition in (
+                "def _host_to_ip_literal(",
+                "def parse_host_address(",
+                "def is_loopback_host(",
+            )
+        )
+    ]
+
+    assert owner.count("def parse_host_address(") == 1
+    assert owner.count("def is_loopback_host(") == 1
+    assert "from ..utils.net import parse_host_address" in script_executors
+    assert "literal = parse_host_address(host)" in script_executors
+    assert "from ...utils.net import parse_host_address" in mcp_warnings
+    assert "ip = parse_host_address(bare)" in mcp_warnings
+    assert duplicate_paths == []
+    assert "Network host parsing and loopback classification must use utils/net.py" in guard
+
+
+def test_network_host_parsing_guard_rejects_parallel_owner(tmp_path: Path) -> None:
+    """The boundary lint rejects a second host-literal parser."""
+    root = Path(__file__).parents[2]
+    sandbox = tmp_path / "repo"
+    shutil.copytree(
+        root,
+        sandbox,
+        ignore=shutil.ignore_patterns(
+            ".git",
+            ".venv",
+            ".pytest_cache",
+            "__pycache__",
+            "build",
+            "dist",
+            "node_modules",
+        ),
+    )
+    duplicate = sandbox / "src/apm_cli/install/mcp/registry.py"
+    duplicate.write_text(
+        duplicate.read_text(encoding="utf-8")
+        + "\n\ndef parse_host_address(host: str | None) -> None:\n"
+        + "    return None\n",
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        ("bash", "scripts/lint-architecture-boundaries.sh"),
+        cwd=sandbox,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=300,
+    )
+
+    assert result.returncode == 1
+    assert "Network host parsing and loopback classification must use utils/net.py" in result.stdout
 
 
 def test_ado_policy_coordinate_has_single_owner() -> None:
