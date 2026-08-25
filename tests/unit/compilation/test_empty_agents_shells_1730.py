@@ -424,6 +424,36 @@ class TestCleanRemovesEmptyShells:
         assert not result.success
         assert stale_shell.exists()
 
+    @pytest.mark.parametrize("dry_run", [False, True])
+    def test_clean_preserves_managed_orphan_and_reports_it(
+        self, project_with_stale_shell, dry_run: bool
+    ):
+        """Managed orphan retention is reported consistently in previews and writes."""
+        tmp_path, primitives, stale_shell = project_with_stale_shell
+        stale_shell.write_text(
+            f"# Team guidance\n{AGENTS_MD_GENERATED_MARKER}\n"
+            "<!-- apm:start -->\nold APM content\n<!-- apm:end -->\n",
+            encoding="utf-8",
+        )
+
+        compiler = AgentsCompiler(str(tmp_path))
+        result = compiler._compile_distributed(
+            CompilationConfig(
+                target="vscode",
+                agents_md_mode="managed_section",
+                clean_orphaned=True,
+                dry_run=dry_run,
+            ),
+            primitives,
+        )
+
+        assert result.success
+        assert stale_shell.exists()
+        assert (
+            "Skipping managed AGENTS.md orphan cleanup to preserve hand-authored content."
+            in result.warnings
+        )
+
 
 # ---------------------------------------------------------------------------
 # Hand-authored AGENTS.md protection

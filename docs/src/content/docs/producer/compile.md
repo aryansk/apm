@@ -236,7 +236,9 @@ you can omit `start_marker` and `end_marker` if you use those verbatim.
 
 **Constraints:**
 - An existing target file must carry the markers. New distributed placements
-  are created with a managed block, ready for later recompiles.
+  are created with a managed block, ready for later recompiles. This automatic
+  bootstrap applies only to distributed placements; add markers yourself before
+  enabling the mode for a single-file `AGENTS.md`.
 - Both markers must be present in the file exactly once (missing or
   duplicate markers raise a loud error so no content is silently lost).
 - The start marker must appear before the end marker; reversed order raises a loud error.
@@ -247,8 +249,22 @@ you can omit `start_marker` and `end_marker` if you use those verbatim.
   `AGENTS.md`. A placement in a nested Git repository (a `.git` directory or
   gitfile), including its descendants, is skipped with a warning.
 - Use `apm compile --dry-run` before enabling the mode to inspect the eligible
-  placement set. The preview excludes nested repositories just like a real
-  compile.
+  placement set. The preview excludes nested repositories and reports managed
+  orphan files that `--clean` retains, just like a real compile.
+- `apm compile --clean` never removes an orphan with either managed marker,
+  because the file can contain team-owned content outside the managed block.
+  Remove it manually when that content is no longer needed.
+
+For example, compile scoped rules while retaining the rest of each generated
+file:
+
+```bash
+apm compile --target codex --dry-run
+apm compile --target codex --clean
+```
+
+If an existing distributed `AGENTS.md` has no markers, add the marker block
+around the content APM should own before the first managed-section compile.
 
 ## Global compilation (-g)
 

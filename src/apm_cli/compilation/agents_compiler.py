@@ -706,6 +706,19 @@ class AgentsCompiler:
                 stats=distributed_result.stats,
             )
 
+        managed_orphans: list[Path] = []
+        cleanup_paths = distributed_result.orphaned_files
+        if config.agents_md_mode == "managed_section":
+            cleanup_paths = []
+            for path in distributed_result.orphaned_files:
+                if self._has_managed_section_markers(path, config):
+                    managed_orphans.append(path)
+                else:
+                    cleanup_paths.append(path)
+        managed_orphan_notice = (
+            "Skipping managed AGENTS.md orphan cleanup to preserve hand-authored content."
+        )
+
         # Display professional compilation output only after the canonical
         # preparation gate, so previews include exactly the eligible write set.
         compilation_results = distributed_compiler.get_compilation_results_for_display(
@@ -735,13 +748,19 @@ class AgentsCompiler:
         # Handle dry-run mode after the canonical preparation gate so its
         # reported placements match the files a real compile can write.
         if config.dry_run:
-            if distributed_result.stats:
-                distributed_result.stats["agents_files_generated"] = len(pending_outputs)
+            distributed_result.stats["agents_files_generated"] = len(pending_outputs)
+            distributed_result.stats["nested_git_placements_skipped"] = (
+                len(distributed_result.content_map) - len(pending_outputs)
+            )
             return CompilationResult(
                 success=len(self.errors) == 0,
                 output_path="Preview mode - no files written",
                 content=self._generate_placement_summary(distributed_result, pending_outputs),
-                warnings=self.warnings + distributed_result.warnings,
+                warnings=(
+                    self.warnings
+                    + distributed_result.warnings
+                    + ([managed_orphan_notice] if config.clean_orphaned and managed_orphans else [])
+                ),
                 errors=self.errors + distributed_result.errors,
                 stats=distributed_result.stats,
             )
@@ -760,29 +779,17 @@ class AgentsCompiler:
             except (OSError, CompiledOutputPolicyError) as exc:
                 self.errors.append(f"Failed to write distributed output batch: {exc}")
 
-        managed_orphans = (
-            [
-                path
-                for path in distributed_result.orphaned_files
-                if self._has_managed_section_markers(path, config)
-            ]
-            if config.agents_md_mode == "managed_section"
-            else []
-        )
-        cleanup_paths = [
-            path for path in distributed_result.orphaned_files if path not in managed_orphans
-        ]
         if not self.errors and config.clean_orphaned and cleanup_paths:
             cleanup_messages = distributed_compiler._cleanup_orphaned_files(cleanup_paths)
             self.warnings.extend(cleanup_messages)
         if not self.errors and config.clean_orphaned and managed_orphans:
-            self.warnings.append(
-                "Skipping managed AGENTS.md orphan cleanup to preserve hand-authored content."
-            )
+            self.warnings.append(managed_orphan_notice)
 
         # Update stats with actual files written
-        if distributed_result.stats:
-            distributed_result.stats["agents_files_generated"] = successful_writes
+        distributed_result.stats["agents_files_generated"] = successful_writes
+        distributed_result.stats["nested_git_placements_skipped"] = (
+            len(distributed_result.content_map) - len(pending_outputs)
+        )
 
         # Merge warnings and errors
         self.warnings.extend(distributed_result.warnings)

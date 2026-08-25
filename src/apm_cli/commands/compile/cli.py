@@ -777,10 +777,27 @@ def _run_compilation(
                     if k.endswith(("_files_written", "_files_generated"))
                 )
                 if _files_written > 0:
-                    logger.success(
-                        "Compilation completed successfully!",
-                        symbol="check",
-                    )
+                    nested_skips = int(result.stats.get("nested_git_placements_skipped", 0) or 0)
+                    if nested_skips:
+                        agents_generated = int(
+                            result.stats.get(
+                                "agents_files_generated",
+                                result.stats.get("agents_files_written", 0),
+                            )
+                            or 0
+                        )
+                        generated_noun = "file" if agents_generated == 1 else "files"
+                        skipped_noun = "placement" if nested_skips == 1 else "placements"
+                        logger.success(
+                            f"Compiled {agents_generated} AGENTS.md {generated_noun}; "
+                            f"skipped {nested_skips} nested Git repository {skipped_noun}.",
+                            symbol="check",
+                        )
+                    else:
+                        logger.success(
+                            "Compilation completed successfully!",
+                            symbol="check",
+                        )
                 elif clean and result.stats.get("claude_empty_due_to_no_primitives"):
                     # The compiler already reported the expected cleanup outcome.
                     pass
