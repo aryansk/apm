@@ -403,6 +403,27 @@ class TestCleanRemovesEmptyShells:
             "Plain `apm compile` must NOT delete pre-existing AGENTS.md files."
         )
 
+    def test_failed_output_batch_preserves_stale_shell(self, project_with_stale_shell):
+        """A failed output batch must not remove an orphan during --clean."""
+        from unittest.mock import patch
+
+        tmp_path, primitives, stale_shell = project_with_stale_shell
+        stale_shell.unlink()
+        stale_shell = tmp_path / "stale" / "AGENTS.md"
+        stale_shell.parent.mkdir()
+        stale_shell.write_text(_apm_generated_marker_content(), encoding="utf-8")
+
+        compiler = AgentsCompiler(str(tmp_path))
+        config = CompilationConfig(target="codex", clean_orphaned=True, dry_run=False)
+        with patch(
+            "apm_cli.compilation.output_writer.CompiledOutputWriter.write_many",
+            side_effect=OSError("write failed"),
+        ):
+            result = compiler._compile_distributed(config, primitives)
+
+        assert not result.success
+        assert stale_shell.exists()
+
 
 # ---------------------------------------------------------------------------
 # Hand-authored AGENTS.md protection

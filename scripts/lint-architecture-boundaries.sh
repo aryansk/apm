@@ -218,7 +218,7 @@ if [ "$nested_repository_inventory_count" -ne 1 ] \
     || [ "$nested_repository_roots_count" -ne 1 ] \
     || [ "$nested_repository_boundary_count" -ne 1 ] \
     || [ "$nested_repository_directory_count" -ne 1 ]; then
-    echo "[x] Nested Git cleanup must use the inventory and exclude repositories"
+    echo "[x] Nested Git cleanup must prune nested repository roots"
     violations=$((violations + 1))
 fi
 agents_source_attribution_output=$(python3 scripts/check_agents_source_attribution_owner.py \

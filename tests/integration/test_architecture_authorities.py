@@ -972,8 +972,8 @@ def test_user_root_scoped_instruction_eligibility_has_single_owner(tmp_path: Pat
 @pytest.mark.parametrize(
     ("guard", "replacement"),
     [
-        ("git_metadata.is_file() or git_metadata.is_dir()", "False"),
-        ("child_dirs.clear()", "pass"),
+        ('(git_metadata := entry.path / ".git").is_file()', "False"),
+        ("nested_repository_roots = tuple(", "nested_repository_roots = list("),
     ],
 )
 def test_nested_worktree_cleanup_guard_rejects_unbounded_agents_scan(

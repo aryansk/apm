@@ -772,10 +772,10 @@ class AgentsCompiler:
         cleanup_paths = [
             path for path in distributed_result.orphaned_files if path not in managed_orphans
         ]
-        if config.clean_orphaned and cleanup_paths:
+        if not self.errors and config.clean_orphaned and cleanup_paths:
             cleanup_messages = distributed_compiler._cleanup_orphaned_files(cleanup_paths)
             self.warnings.extend(cleanup_messages)
-        if config.clean_orphaned and managed_orphans:
+        if not self.errors and config.clean_orphaned and managed_orphans:
             self.warnings.append(
                 "Skipping managed AGENTS.md orphan cleanup to preserve hand-authored content."
             )

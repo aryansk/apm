@@ -220,6 +220,7 @@ class DistributedAgentsCompiler:
             debug = config.get("debug", False)
             clean_orphaned = config.get("clean_orphaned", False)
             defer_orphan_cleanup = config.get("defer_orphan_cleanup", False)
+            dry_run = config.get("dry_run", False)
             # True when apm install has already deployed instructions to
             # .github/instructions/; omitting them here avoids Copilot reading
             # duplicate content from both AGENTS.md and .github/instructions/.
@@ -887,10 +888,7 @@ class DistributedAgentsCompiler:
             for entry in deploy_inventory.directories
             if (
                 entry.path != self.base_dir
-                and (
-                    (git_metadata := entry.path / ".git").is_file()
-                    or git_metadata.is_dir()
-                )
+                and ((git_metadata := entry.path / ".git").is_file() or git_metadata.is_dir())
             )
         )
         cleanup_directories = {
