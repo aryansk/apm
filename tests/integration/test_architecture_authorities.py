@@ -973,7 +973,8 @@ def test_user_root_scoped_instruction_eligibility_has_single_owner(tmp_path: Pat
     ("guard", "replacement"),
     [
         ('(git_metadata := entry.path / ".git").is_file()', "False"),
-        ("nested_repository_roots = tuple(", "nested_repository_roots = list("),
+        ("nested_repository_roots = frozenset(", "nested_repository_roots = tuple("),
+        ("ancestor in nested_repository_roots", "False"),
     ],
 )
 def test_nested_worktree_cleanup_guard_rejects_unbounded_agents_scan(

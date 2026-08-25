@@ -210,14 +210,17 @@ fi
 nested_repository_inventory_count=$(grep -Fc \
     'deploy_inventory = self._deploy_inventory_for_cleanup()' "$distributed_compiler" || true)
 nested_repository_roots_count=$(grep -Fc \
-    'nested_repository_roots = tuple(' "$distributed_compiler" || true)
+    'nested_repository_roots = frozenset(' "$distributed_compiler" || true)
 nested_repository_boundary_count=$(grep -Fc \
     'git_metadata := entry.path / ".git").is_file()' "$distributed_compiler" || true)
 nested_repository_directory_count=$(grep -Fc 'or git_metadata.is_dir()' "$distributed_compiler" || true)
+nested_repository_prune_count=$(grep -Fc \
+    'ancestor in nested_repository_roots' "$distributed_compiler" || true)
 if [ "$nested_repository_inventory_count" -ne 1 ] \
     || [ "$nested_repository_roots_count" -ne 1 ] \
     || [ "$nested_repository_boundary_count" -ne 1 ] \
-    || [ "$nested_repository_directory_count" -ne 1 ]; then
+    || [ "$nested_repository_directory_count" -ne 1 ] \
+    || [ "$nested_repository_prune_count" -ne 1 ]; then
     echo "[x] Nested Git cleanup must prune nested repository roots"
     violations=$((violations + 1))
 fi
