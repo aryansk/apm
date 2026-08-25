@@ -625,6 +625,7 @@ class AgentsCompiler:
             "debug": config.debug,
             "clean_orphaned": config.clean_orphaned,
             "defer_orphan_cleanup": True,
+            "defer_orphan_warnings": True,
             "dry_run": config.dry_run,
             "skip_instructions": skip_instructions,
             "with_constitution": config.with_constitution,
@@ -715,9 +716,10 @@ class AgentsCompiler:
                     managed_orphans.append(path)
                 else:
                     cleanup_paths.append(path)
-        managed_orphan_notice = (
-            "Skipping managed AGENTS.md orphan cleanup to preserve hand-authored content."
-        )
+        if cleanup_paths:
+            self.warnings.extend(distributed_compiler._generate_orphan_warnings(cleanup_paths))
+        if managed_orphans:
+            self.warnings.append(self._managed_orphan_retention_warning(managed_orphans))
 
         # Display professional compilation output only after the canonical
         # preparation gate, so previews include exactly the eligible write set.
@@ -749,18 +751,14 @@ class AgentsCompiler:
         # reported placements match the files a real compile can write.
         if config.dry_run:
             distributed_result.stats["agents_files_generated"] = len(pending_outputs)
-            distributed_result.stats["nested_git_placements_skipped"] = (
-                len(distributed_result.content_map) - len(pending_outputs)
-            )
+            distributed_result.stats["nested_git_placements_skipped"] = len(
+                distributed_result.content_map
+            ) - len(pending_outputs)
             return CompilationResult(
                 success=len(self.errors) == 0,
                 output_path="Preview mode - no files written",
                 content=self._generate_placement_summary(distributed_result, pending_outputs),
-                warnings=(
-                    self.warnings
-                    + distributed_result.warnings
-                    + ([managed_orphan_notice] if config.clean_orphaned and managed_orphans else [])
-                ),
+                warnings=(self.warnings + distributed_result.warnings),
                 errors=self.errors + distributed_result.errors,
                 stats=distributed_result.stats,
             )
@@ -782,14 +780,11 @@ class AgentsCompiler:
         if not self.errors and config.clean_orphaned and cleanup_paths:
             cleanup_messages = distributed_compiler._cleanup_orphaned_files(cleanup_paths)
             self.warnings.extend(cleanup_messages)
-        if not self.errors and config.clean_orphaned and managed_orphans:
-            self.warnings.append(managed_orphan_notice)
-
         # Update stats with actual files written
         distributed_result.stats["agents_files_generated"] = successful_writes
-        distributed_result.stats["nested_git_placements_skipped"] = (
-            len(distributed_result.content_map) - len(pending_outputs)
-        )
+        distributed_result.stats["nested_git_placements_skipped"] = len(
+            distributed_result.content_map
+        ) - len(pending_outputs)
 
         # Merge warnings and errors
         self.warnings.extend(distributed_result.warnings)
@@ -1777,6 +1772,21 @@ class AgentsCompiler:
         except OSError:
             return True
         return config.agents_md_start_marker in content or config.agents_md_end_marker in content
+
+    def _managed_orphan_retention_warning(self, managed_orphans: list[Path]) -> str:
+        """Describe protected managed orphans and the required manual action."""
+        paths = [portable_relpath(path, self.base_dir) for path in managed_orphans]
+        if len(paths) == 1:
+            return (
+                f"Retained managed AGENTS.md orphan: {paths[0]} -- "
+                "remove it manually when its team-owned content is no longer needed"
+            )
+        displayed_paths = ", ".join(paths[:5])
+        remainder = "" if len(paths) <= 5 else f", and {len(paths) - 5} more"
+        return (
+            f"Retained {len(paths)} managed AGENTS.md orphans: {displayed_paths}{remainder} -- "
+            "remove them manually when their team-owned content is no longer needed"
+        )
 
     def _write_distributed_file(
         self, agents_path: Path, content: str, config: CompilationConfig

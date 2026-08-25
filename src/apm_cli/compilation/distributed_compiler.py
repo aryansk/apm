@@ -220,6 +220,7 @@ class DistributedAgentsCompiler:
             debug = config.get("debug", False)
             clean_orphaned = config.get("clean_orphaned", False)
             defer_orphan_cleanup = config.get("defer_orphan_cleanup", False)
+            defer_orphan_warnings = config.get("defer_orphan_warnings", False)
             dry_run = config.get("dry_run", False)
             # True when apm install has already deployed instructions to
             # .github/instructions/; omitting them here avoids Copilot reading
@@ -331,7 +332,7 @@ class DistributedAgentsCompiler:
                 suppressed_empty_paths=suppressed_paths if clean_orphaned else [],
             )
 
-            if orphaned_files:
+            if orphaned_files and not defer_orphan_warnings:
                 # Always show warnings about orphaned files
                 warning_messages = self._generate_orphan_warnings(orphaned_files)
                 if warning_messages:

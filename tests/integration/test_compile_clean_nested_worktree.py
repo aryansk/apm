@@ -248,12 +248,31 @@ def test_compile_force_instructions_preserves_managed_files_and_nested_repositor
     assert _run_git(nested_gitdir, environment, "status", "--porcelain").stdout == ""
     assert _run_git(nested_gitfile, environment, "status", "--porcelain").stdout == ""
 
-    src_agents.write_bytes(b"# Missing managed markers\n")
     managed_orphan = parent / "stale" / "AGENTS.md"
     managed_orphan.parent.mkdir()
     managed_orphan.write_bytes(
-        b"# Retained guidance\n<!-- apm:start -->\nOld generated content\n<!-- apm:end -->\n"
+        f"{AGENTS_MD_GENERATED_MARKER}\n# Retained guidance\n{_MANAGED_START}\n"
+        f"Old generated content\n{_MANAGED_END}\n".encode()
     )
+    managed_orphan_before = managed_orphan.read_bytes()
+    preview = ApmLifecycleRunner((str(apm_binary_path),)).run(
+        ("compile", "--target", "copilot", "--force-instructions", "--dry-run", "--clean"),
+        scenario_id="distributed-agents-managed-orphan-preview",
+        cwd=parent,
+        env=environment,
+    )
+    assert preview.returncode == 0, f"stdout={preview.stdout!r}\nstderr={preview.stderr!r}"
+    assert managed_orphan.read_bytes() == managed_orphan_before
+    assert "Retained managed AGENTS.md orphan: stale/AGENTS.md" in preview.stdout
+    assert "remove it manually" in preview.stdout
+    assert _run_git(nested_gitdir, environment, "status", "--porcelain").stdout == ""
+    assert _run_git(nested_gitfile, environment, "status", "--porcelain").stdout == ""
+
+    src_agents.write_bytes(b"# Missing managed markers\n")
+    generated_orphan = parent / "ordinary-stale" / "AGENTS.md"
+    generated_orphan.parent.mkdir()
+    generated_orphan.write_bytes(_GENERATED_AGENTS)
+    generated_orphan_before = generated_orphan.read_bytes()
     invalid_run = ApmLifecycleRunner((str(apm_binary_path),)).run(
         ("compile", "--target", "copilot", "--force-instructions", "--clean"),
         scenario_id="distributed-agents-managed-section-preflight",
@@ -263,4 +282,5 @@ def test_compile_force_instructions_preserves_managed_files_and_nested_repositor
     assert invalid_run.returncode != 0
     assert root_agents.read_bytes() == first_run_bytes[root_agents]
     assert new_agents.read_bytes() == first_run_bytes[new_agents]
-    assert managed_orphan.exists()
+    assert managed_orphan.read_bytes() == managed_orphan_before
+    assert generated_orphan.read_bytes() == generated_orphan_before
