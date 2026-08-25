@@ -163,29 +163,58 @@ class DeployableSourcePlan:
 
             selected = skill_subset_filter_tokens(skill_subset)
             selected_skill_names = frozenset(selected) if selected is not None else None
-            for skills_root in (source_root / "skills", source_root / ".apm" / "skills"):
-                if not _is_safe_source_path(skills_root, source_root) or not skills_root.is_dir():
-                    continue
-                if has_root_skill and selected is None and skills_root == source_root / "skills":
-                    continue
-                candidates = (
-                    (skills_root / name for name in sorted(selected))
-                    if selected is not None
-                    else skills_root.iterdir()
-                )
-                for skill_dir in candidates:
+            from apm_cli.models.apm_package import PackageType
+
+            if (
+                getattr(package_info, "package_type", None) is PackageType.MARKETPLACE_PLUGIN
+                and not has_root_skill
+            ):
+                from apm_cli.deps.plugin_parser import normalized_plugin_skill_sources
+
+                plugin_sources, _declared = normalized_plugin_skill_sources(source_root)
+                candidates = [
+                    plugin_sources[name]
+                    for name in (
+                        sorted(selected) if selected is not None else sorted(plugin_sources)
+                    )
+                    if name in plugin_sources
+                ]
+            else:
+                candidates = []
+                for skills_root in (
+                    source_root / "skills",
+                    source_root / ".apm" / "skills",
+                ):
                     if (
-                        _is_safe_source_path(skill_dir, source_root)
-                        and skill_dir.is_dir()
-                        and _is_safe_source_path(skill_dir / "SKILL.md", source_root)
-                        and (skill_dir / "SKILL.md").is_file()
-                        and (selected is None or skill_dir.name in selected)
+                        not _is_safe_source_path(skills_root, source_root)
+                        or not skills_root.is_dir()
+                        or (
+                            has_root_skill
+                            and selected is None
+                            and skills_root == source_root / "skills"
+                        )
                     ):
-                        for path in tree_files(skill_dir):
-                            relative = path.relative_to(skill_dir)
-                            if skip_bin and relative.parts[0] == "bin":
-                                continue
-                            add_file(path)
+                        continue
+                    candidates.extend(
+                        [skills_root / name for name in sorted(selected)]
+                        if selected is not None
+                        else skills_root.iterdir()
+                    )
+
+            for skill_dir in candidates:
+                if not (
+                    _is_safe_source_path(skill_dir, source_root)
+                    and skill_dir.is_dir()
+                    and _is_safe_source_path(skill_dir / "SKILL.md", source_root)
+                    and (skill_dir / "SKILL.md").is_file()
+                    and (selected is None or skill_dir.name in selected)
+                ):
+                    continue
+                for path in tree_files(skill_dir):
+                    relative = path.relative_to(skill_dir)
+                    if skip_bin and relative.parts[0] == "bin":
+                        continue
+                    add_file(path)
 
         if plugin_bin_deployable:
             add_tree(source_root / "bin")
