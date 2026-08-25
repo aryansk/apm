@@ -136,7 +136,7 @@ between the companion corpus and the implementation.
 
 ### 1.3 Document conventions
 
-- OpenAPM v0.1 carries **117 normative statements** indexed in
+- OpenAPM v0.1 carries **118 normative statements** indexed in
   [Appendix C](#appendix-c-index-of-normative-statements).
 - All on-disk files defined by this specification are **YAML 1.2**
   parsed under the safe subset defined in
@@ -2231,6 +2231,14 @@ derived leaf name maps to more than one canonical source contributes no
 skill. Only the resulting names are eligible for enumeration, selection,
 or deployment.
 
+<a id="req-pr-007"></a>
+**[req-pr-007]** A conforming **consumer** implementation MUST, when
+copying a declared Plugin collection component source, canonicalize the
+non-symlink source root selected for that component. A consumer-generated
+staging subtree is the materialization root created by the current operation
+and every descendant of that root. The consumer MUST prune every such staging
+subtree before traversing the source.
+
 A package **exposes selectable skills** when layout resolution identifies a
 container for individually addressable named skill entries, whether that
 container currently yields zero or more entries. This includes an APM package
@@ -2565,7 +2573,8 @@ without a spec revision. The current matrix is in the companion
   [req-tg-006](#req-tg-006), [req-tg-007](#req-tg-007),
   [req-tg-008](#req-tg-008), [req-tg-009](#req-tg-009),
   [req-tg-010](#req-tg-010), [req-tg-011](#req-tg-011),
-  [req-tg-012](#req-tg-012), [req-pr-006](#req-pr-006).
+  [req-tg-012](#req-tg-012), [req-pr-006](#req-pr-006),
+  [req-pr-007](#req-pr-007).
 
 ---
 
@@ -3149,7 +3158,7 @@ conformance statement identifying:
 [req-rs-015](#req-rs-015), [req-rs-016](#req-rs-016),
 [req-pr-001](#req-pr-001), [req-pr-002](#req-pr-002),
 [req-pr-003](#req-pr-003), [req-tg-001](#req-tg-001),
-[req-pr-006](#req-pr-006),
+[req-pr-006](#req-pr-006), [req-pr-007](#req-pr-007),
 [req-tg-002](#req-tg-002), [req-tg-003](#req-tg-003),
 [req-tg-004](#req-tg-004), [req-tg-005](#req-tg-005),
 [req-tg-006](#req-tg-006), [req-tg-007](#req-tg-007),
@@ -3590,6 +3599,7 @@ renumbering of conformance classes.
 | [req-pr-004](#req-pr-004)                | MUST    | 7.8     | producer    |
 | [req-pr-005](#req-pr-005)                | SHOULD  | 7.8     | producer    |
 | [req-pr-006](#req-pr-006)                | MUST    | 8.1     | consumer    |
+| [req-pr-007](#req-pr-007)                | MUST    | 8.1     | consumer    |
 | [req-tg-001](#req-tg-001)                | MUST    | 8.4     | consumer    |
 | [req-tg-002](#req-tg-002)                | MUST    | 8.5     | consumer    |
 | [req-tg-003](#req-tg-003)                | MUST    | 8.5     | consumer    |
@@ -3621,7 +3631,7 @@ renumbering of conformance classes.
 | [req-cf-001](#req-cf-001)                | MUST    | 12.5    | consumer    |
 | [req-cf-002](#req-cf-002)                | MUST    | 12.3    | consumer    |
 
-**Total normative statements: 116** (111 MUST, 5 SHOULD).
+**Total normative statements: 118** (113 MUST, 5 SHOULD).
 
 ---
 
@@ -3664,6 +3674,7 @@ renumbering of conformance classes.
 | 0.1.31  | 2026-08-23 | Spec-citation fold for Azure DevOps organization-policy discovery. Added [req-pl-017] (Section 6.8, governance MUST): discovery uses `apm/apm-policy` first and can use legacy `_apm/_apm` only after an HTTP 404; all non-404 failures stop without fallback, and a successful legacy fallback emits one actionable migration warning. Section 6.9, Section 11.3.4, and Appendix C updated. Statement count: 114 -> 115 (110 MUST, 5 SHOULD). |
 | 0.1.32  | 2026-08-23 | Spec-citation fold for authoritative legacy plugin skill declarations (closes #2537). Added [req-pr-006] (Section 8.1, consumer MUST): omitted `skills` alone enables conventional discovery; a string or list replaces discovery; explicit empty, invalid, escaping, symlinked, and duplicate-derived entries contribute no skills; declared containers contribute only immediate child skills; and only resulting names are eligible for enumeration, selection, or deployment. Section 8.7, Section 11.3.2, Appendix C, and conformance coverage updated. Statement count: 115 -> 116 (111 MUST, 5 SHOULD). |
 | 0.1.33  | 2026-08-23 | Spec-citation fold for authorized pre-deployment scan scope (closes #2490 Mode-B silent-extension gate). Added [req-sc-015] (Section 10.16, consumer MUST): a consumer derives one post-authorization source-file set for every install and uninstall re-integration materialization lifecycle; excludes symlink files and does not traverse symlinked directories; scans and materializes only that set; rejects a selected blocking finding before a source-derived target write; and does not scan or materialize source-only package files. Added row 20 to the Section 10.11 summary table. Reconciled with concurrent [req-pl-017] and [req-pr-006] and retained all amendments. Section 1.3, Section 11.3.2, and Appendix C updated. Statement count: 116 -> 117 (112 MUST, 5 SHOULD). |
+| 0.1.34  | 2026-08-25 | Spec-citation fold for root-declared Plugin component staging containment (closes #2556). Added [req-pr-007] (Section 8.1, consumer MUST): a consumer canonicalizes the non-symlink component-source root and prunes the current operation's materialization subtree before traversal. Section 8.7, Section 11.3.2, Appendix C, and conformance coverage updated. Statement count: 117 -> 118 (113 MUST, 5 SHOULD). |
 
 Errata (none at publication).
 

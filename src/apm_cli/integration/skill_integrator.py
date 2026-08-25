@@ -70,15 +70,20 @@ def _build_deployable_copy_ignore(
     skip_bin: bool = False,
     source_plan: "DeployableSourcePlan | None" = None,
     exclude_apm: bool = False,
+    exclude_apm_yml: bool = False,
 ) -> Callable[[str, list[str]], list[str]]:
     """Build a copy filter constrained to the authorized source plan."""
     base_ignore = build_copy_ignore(skip_bin=skip_bin)
-    apm_filter = shutil.ignore_patterns(".apm") if exclude_apm else None
+    internal_names = (
+        *((".apm",) if exclude_apm else ()),
+        *(("apm.yml",) if exclude_apm_yml else ()),
+    )
+    internal_filter = shutil.ignore_patterns(*internal_names) if internal_names else None
 
     def _combined(directory: str, contents: list[str]) -> list[str]:
         ignored = set(base_ignore(directory, contents))
-        if apm_filter is not None:
-            ignored.update(apm_filter(directory, contents))
+        if internal_filter is not None:
+            ignored.update(internal_filter(directory, contents))
         if source_plan is not None:
             ignored.update(source_plan.copy_ignore(directory, contents))
         return list(ignored)
@@ -1194,6 +1199,8 @@ class SkillIntegrator(BaseIntegrator):
                 shutil.rmtree(target_skill_dir)
             target_skill_dir.parent.mkdir(parents=True, exist_ok=True)
             target_skill_dir.parent.mkdir(parents=True, exist_ok=True)
+            from apm_cli.models.apm_package import PackageType as _PackageType
+
             shutil.copytree(
                 package_path,
                 target_skill_dir,
@@ -1201,6 +1208,7 @@ class SkillIntegrator(BaseIntegrator):
                     skip_bin=skip_bin,
                     source_plan=source_plan,
                     exclude_apm=True,
+                    exclude_apm_yml=package_info.package_type is _PackageType.MARKETPLACE_PLUGIN,
                 ),
             )
             self._resolve_markdown_links_in_skill_bundle(package_path, target_skill_dir)

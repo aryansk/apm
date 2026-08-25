@@ -146,6 +146,11 @@ class DeployableSourcePlan:
                 add_tree(bundle)
 
         if "skills" in target_primitives:
+            from apm_cli.models.apm_package import PackageType
+
+            is_marketplace_plugin = (
+                getattr(package_info, "package_type", None) is PackageType.MARKETPLACE_PLUGIN
+            )
             source_skill = source_root / "SKILL.md"
             has_root_skill = (
                 _is_safe_source_path(source_skill, source_root) and source_skill.is_file()
@@ -157,18 +162,18 @@ class DeployableSourcePlan:
                         relative.parts[0] == ".apm"
                         or path.name == MARKER_FILENAME
                         or (skip_bin and relative.parts[0] == "bin")
+                        or (
+                            is_marketplace_plugin
+                            and len(relative.parts) == 1
+                            and path.name == "apm.yml"
+                        )
                     ):
                         continue
                     add_file(path)
 
             selected = skill_subset_filter_tokens(skill_subset)
             selected_skill_names = frozenset(selected) if selected is not None else None
-            from apm_cli.models.apm_package import PackageType
-
-            if (
-                getattr(package_info, "package_type", None) is PackageType.MARKETPLACE_PLUGIN
-                and not has_root_skill
-            ):
+            if is_marketplace_plugin and not has_root_skill:
                 from apm_cli.deps.plugin_parser import normalized_plugin_skill_sources
 
                 plugin_sources, _declared = normalized_plugin_skill_sources(source_root)
