@@ -323,13 +323,13 @@ class DistributedAgentsCompiler:
             # Phase 4: Handle orphaned file cleanup.
             # generated_paths = ALL placement paths (written + suppressed this run).
             # suppressed_set (built inside _find_orphaned_agents_files) promotes
-            # suppressed paths to orphan candidates only under --clean, so stale
-            # empty shells from prior runs are removed.  Marker-gated: hand-authored
-            # files are never deleted.
+            # suppressed paths to orphan candidates. Deletion remains --clean-only,
+            # while non-clean compiles retain actionable orphan diagnostics.
+            # Marker-gated: hand-authored files are never deleted.
             generated_paths = [p.agents_path for p in placements]
             orphaned_files = self._find_orphaned_agents_files(
                 generated_paths,
-                suppressed_empty_paths=suppressed_paths if clean_orphaned else [],
+                suppressed_empty_paths=suppressed_paths,
             )
 
             if orphaned_files and not defer_orphan_warnings:

@@ -430,11 +430,11 @@ class TestCleanRemovesEmptyShells:
     ):
         """Managed orphan retention is actionable in previews and writes."""
         tmp_path, primitives, stale_shell = project_with_stale_shell
-        stale_shell.write_text(
+        team_owned_content = (
             f"# Team guidance\n{AGENTS_MD_GENERATED_MARKER}\n"
-            "<!-- apm:start -->\nold APM content\n<!-- apm:end -->\n",
-            encoding="utf-8",
+            "<!-- apm:start -->\nold APM content\n<!-- apm:end -->\n"
         )
+        stale_shell.write_text(team_owned_content, encoding="utf-8")
 
         compiler = AgentsCompiler(str(tmp_path))
         result = compiler._compile_distributed(
@@ -449,21 +449,22 @@ class TestCleanRemovesEmptyShells:
 
         assert result.success
         assert stale_shell.exists()
-        assert result.warnings == [
+        assert stale_shell.read_bytes() == team_owned_content.encode()
+        retained_orphan_warning = (
             "Retained managed AGENTS.md orphan: AGENTS.md -- "
             "remove it manually when its team-owned content is no longer needed"
-        ]
-
-    def test_plain_compile_keeps_the_existing_orphan_diagnostic(
-        self, project_with_stale_shell
-    ) -> None:
-        """Without --clean, managed orphans retain the standard cleanup guidance."""
-        tmp_path, primitives, stale_shell = project_with_stale_shell
-        stale_shell.write_text(
-            f"# Team guidance\n{AGENTS_MD_GENERATED_MARKER}\n"
-            "<!-- apm:start -->\nold APM content\n<!-- apm:end -->\n",
-            encoding="utf-8",
         )
+        assert retained_orphan_warning in result.warnings
+        assert result.warnings.count(retained_orphan_warning) == 1
+
+    def test_plain_compile_reports_managed_orphan_retention(self, project_with_stale_shell) -> None:
+        """Without --clean, team-owned managed orphans remain actionable."""
+        tmp_path, primitives, stale_shell = project_with_stale_shell
+        team_owned_content = (
+            f"# Team guidance\n{AGENTS_MD_GENERATED_MARKER}\n"
+            "<!-- apm:start -->\nold APM content\n<!-- apm:end -->\n"
+        )
+        stale_shell.write_text(team_owned_content, encoding="utf-8")
 
         result = AgentsCompiler(str(tmp_path))._compile_distributed(
             CompilationConfig(
@@ -476,7 +477,13 @@ class TestCleanRemovesEmptyShells:
 
         assert result.success
         assert stale_shell.exists()
-        assert any("run 'apm compile --clean' to remove" in warning for warning in result.warnings)
+        assert stale_shell.read_bytes() == team_owned_content.encode()
+        retained_orphan_warning = (
+            "Retained managed AGENTS.md orphan: AGENTS.md -- "
+            "remove it manually when its team-owned content is no longer needed"
+        )
+        assert retained_orphan_warning in result.warnings
+        assert result.warnings.count(retained_orphan_warning) == 1
 
 
 # ---------------------------------------------------------------------------
