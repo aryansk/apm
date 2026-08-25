@@ -709,19 +709,24 @@ class AgentsCompiler:
                 stats=distributed_result.stats,
             )
 
+        deferred_managed_cleanup = (
+            config.clean_orphaned and config.agents_md_mode == "managed_section"
+        )
         cleanup_paths = distributed_result.orphaned_files
         managed_orphans: list[Path] = []
-        if config.clean_orphaned and config.agents_md_mode == "managed_section":
+        if deferred_managed_cleanup:
             cleanup_paths = []
             for path in distributed_result.orphaned_files:
                 if self._has_managed_section_markers(path, config):
                     managed_orphans.append(path)
                 else:
                     cleanup_paths.append(path)
-        if cleanup_paths:
-            self.warnings.extend(distributed_compiler._generate_orphan_warnings(cleanup_paths))
-        if managed_orphans:
-            self.warnings.append(self._managed_orphan_retention_warning(managed_orphans))
+            if config.dry_run and cleanup_paths:
+                self.warnings.extend(
+                    distributed_compiler._cleanup_orphaned_files(cleanup_paths, dry_run=True)
+                )
+            if managed_orphans:
+                self.warnings.append(self._managed_orphan_retention_warning(managed_orphans))
 
         # Display professional compilation output only after the canonical
         # preparation gate, so previews include exactly the eligible write set.

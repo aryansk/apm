@@ -248,9 +248,10 @@ you can omit `start_marker` and `end_marker` if you use those verbatim.
 - In distributed compile mode, the same marker rules apply to every generated
   `AGENTS.md`. A placement in a nested Git repository (a `.git` directory or
   gitfile), including its descendants, is skipped with a warning.
-- Use `apm compile --dry-run --clean` before enabling the mode to inspect the eligible
-  placement set. The preview excludes nested repositories and reports managed
-  orphan files that `--clean` retains, just like a real compile.
+- After adding markers and enabling managed-section mode, use
+  `apm compile --dry-run --clean` to inspect the eligible placement set. The
+  preview excludes nested repositories and reports managed orphan files that
+  `--clean` retains, just like a real compile.
 - `apm compile --clean` never removes an orphan with either managed marker,
   because the file can contain team-owned content outside the managed block.
   Remove it manually when that content is no longer needed.

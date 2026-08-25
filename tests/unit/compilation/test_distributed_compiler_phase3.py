@@ -640,7 +640,7 @@ class TestFindOrphanedAgentsFiles:
             orphans: list[Path] = compiler._find_orphaned_agents_files([])
 
         assert nested_agents not in orphans
-        assert "Skipping nested Git worktree during orphan cleanup: nested" in caplog.text
+        assert "Skipping nested Git repository during orphan cleanup: nested" in caplog.text
 
     def test_skips_files_in_node_modules(self, tmp_path: Path) -> None:
         """AGENTS.md inside node_modules/ is skipped."""
