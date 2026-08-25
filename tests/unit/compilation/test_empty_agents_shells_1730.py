@@ -454,6 +454,30 @@ class TestCleanRemovesEmptyShells:
             "remove it manually when its team-owned content is no longer needed"
         ]
 
+    def test_plain_compile_keeps_the_existing_orphan_diagnostic(
+        self, project_with_stale_shell
+    ) -> None:
+        """Without --clean, managed orphans retain the standard cleanup guidance."""
+        tmp_path, primitives, stale_shell = project_with_stale_shell
+        stale_shell.write_text(
+            f"# Team guidance\n{AGENTS_MD_GENERATED_MARKER}\n"
+            "<!-- apm:start -->\nold APM content\n<!-- apm:end -->\n",
+            encoding="utf-8",
+        )
+
+        result = AgentsCompiler(str(tmp_path))._compile_distributed(
+            CompilationConfig(
+                target="vscode",
+                agents_md_mode="managed_section",
+                clean_orphaned=False,
+            ),
+            primitives,
+        )
+
+        assert result.success
+        assert stale_shell.exists()
+        assert any("run 'apm compile --clean' to remove" in warning for warning in result.warnings)
+
 
 # ---------------------------------------------------------------------------
 # Hand-authored AGENTS.md protection

@@ -625,7 +625,9 @@ class AgentsCompiler:
             "debug": config.debug,
             "clean_orphaned": config.clean_orphaned,
             "defer_orphan_cleanup": True,
-            "defer_orphan_warnings": True,
+            "defer_orphan_warnings": (
+                config.clean_orphaned and config.agents_md_mode == "managed_section"
+            ),
             "dry_run": config.dry_run,
             "skip_instructions": skip_instructions,
             "with_constitution": config.with_constitution,
@@ -707,9 +709,9 @@ class AgentsCompiler:
                 stats=distributed_result.stats,
             )
 
-        managed_orphans: list[Path] = []
         cleanup_paths = distributed_result.orphaned_files
-        if config.agents_md_mode == "managed_section":
+        managed_orphans: list[Path] = []
+        if config.clean_orphaned and config.agents_md_mode == "managed_section":
             cleanup_paths = []
             for path in distributed_result.orphaned_files:
                 if self._has_managed_section_markers(path, config):
