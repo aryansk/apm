@@ -143,6 +143,13 @@ When `apm install` has already deployed instructions to `.claude/rules/`, `apm c
 
 When `apm install --target copilot` has already deployed instructions to `.github/instructions/`, `apm compile --target copilot` omits `AGENTS.md` entirely if its only content would be the duplicated instructions section. `AGENTS.md` is still generated when it carries non-instruction content such as a constitution. Pass `--force-instructions` (alias: `--no-dedup`) to force full `AGENTS.md` output.
 
+**Distributed managed sections.** With `compilation.agents_md.mode:
+managed_section`, existing distributed `AGENTS.md` files retain content
+outside their APM markers. New placements are created with a managed block. Run
+`apm compile --dry-run` to inspect the same eligible placement set a real
+compile uses; nested Git repositories and linked worktrees, including their
+descendants, are skipped.
+
 ## Scripts
 
 | Command | Purpose | Key flags |

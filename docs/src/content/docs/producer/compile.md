@@ -235,10 +235,8 @@ The default markers are `<!-- apm:start -->` and `<!-- apm:end -->`, so
 you can omit `start_marker` and `end_marker` if you use those verbatim.
 
 **Constraints:**
-- The target file must already exist: if it does not, APM raises a clear
-  error ("does not exist yet") instead of a confusing "markers not found".
-  Use `mode: full` for the first run to create the file, then switch to
-  `managed_section`.
+- An existing target file must carry the markers. New distributed placements
+  are created with a managed block, ready for later recompiles.
 - Both markers must be present in the file exactly once (missing or
   duplicate markers raise a loud error so no content is silently lost).
 - The start marker must appear before the end marker; reversed order raises a loud error.
@@ -248,6 +246,9 @@ you can omit `start_marker` and `end_marker` if you use those verbatim.
 - In distributed compile mode, the same marker rules apply to every generated
   `AGENTS.md`. A placement in a nested Git repository (a `.git` directory or
   gitfile), including its descendants, is skipped with a warning.
+- Use `apm compile --dry-run` before enabling the mode to inspect the eligible
+  placement set. The preview excludes nested repositories just like a real
+  compile.
 
 ## Global compilation (-g)
 

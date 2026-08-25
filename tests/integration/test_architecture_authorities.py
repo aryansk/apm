@@ -972,7 +972,7 @@ def test_user_root_scoped_instruction_eligibility_has_single_owner(tmp_path: Pat
 @pytest.mark.parametrize(
     ("guard", "replacement"),
     [
-        ('(directory_path / ".git").is_file()', "False"),
+        ("git_metadata.is_file() or git_metadata.is_dir()", "False"),
         ("child_dirs.clear()", "pass"),
     ],
 )
@@ -1012,7 +1012,7 @@ def test_nested_worktree_cleanup_guard_rejects_unbounded_agents_scan(
     )
 
     assert result.returncode == 1
-    assert "Nested worktree cleanup must prune .git-file roots" in result.stdout
+    assert "Nested Git cleanup must prune nested repository roots" in result.stdout
 
 
 @pytest.mark.parametrize(
@@ -1023,6 +1023,7 @@ def test_nested_worktree_cleanup_guard_rejects_unbounded_agents_scan(
             "nested_root = None",
         ),
         ("git_metadata.is_file() or git_metadata.is_dir()", "False"),
+        ("current = ensure_path_within(directory, base_dir)", "current = directory.resolve()"),
     ],
 )
 def test_distributed_agents_write_guard_rejects_nested_repository_bypass(
@@ -3403,7 +3404,8 @@ def test_policy_cache_serializer_boundary_is_registered() -> None:
     root = Path(__file__).parents[2]
     guard = (root / "scripts/lint-architecture-boundaries.sh").read_text(encoding="utf-8")
     owner_row = (
-        "| Cached policy shape | policy/discovery.py (_policy_to_dict via _serialize_policy) |"
+        "| Cached policy shape | policy/discovery.py (_policy_to_dict via "
+        "_serialize_policy; ADO_POLICY_PROJECT; ADO_POLICY_REPOSITORY) |"
     )
     assert ("Cached policy shape must route through policy/discovery.py::_policy_to_dict") in guard
     for token in ("_policy_to_dict", "_serialize_policy", "_write_cache"):
@@ -3539,7 +3541,8 @@ def test_windows_owner_row_stays_synced_source_deployed_and_lockfile() -> None:
 
     owner_rows = (
         "| Windows stable executable path | install.ps1 ($currentDir / $currentExe) |",
-        "| Cached policy shape | policy/discovery.py (_policy_to_dict via _serialize_policy) |",
+        "| Cached policy shape | policy/discovery.py (_policy_to_dict via "
+        "_serialize_policy; ADO_POLICY_PROJECT; ADO_POLICY_REPOSITORY) |",
     )
     source_text = source.read_text(encoding="utf-8")
     for owner_row in owner_rows:

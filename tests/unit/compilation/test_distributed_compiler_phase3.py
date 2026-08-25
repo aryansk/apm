@@ -933,6 +933,27 @@ class TestCompileDistributed:
         # The APM-generated orphan should have been cleaned up
         assert not orphan.exists()
 
+    def test_deferred_clean_orphaned_reports_without_cleanup(self, tmp_path: Path) -> None:
+        """defer_orphan_cleanup leaves cleanup to the caller."""
+        compiler = self._setup_compiler(tmp_path)
+        orphan: Path = tmp_path / "old" / "AGENTS.md"
+        orphan.parent.mkdir()
+        orphan.write_text(_GENERATED_CONTENT)
+        prims = _make_primitives()
+
+        result = compiler.compile_distributed(
+            prims,
+            config={
+                "clean_orphaned": True,
+                "defer_orphan_cleanup": True,
+                "dry_run": False,
+            },
+        )
+
+        assert result.success is True
+        assert orphan.exists()
+        assert orphan in result.orphaned_files
+
     def test_dry_run_does_not_delete_orphaned(self, tmp_path: Path) -> None:
         """dry_run=True with clean_orphaned=True does NOT delete orphaned files."""
         compiler = self._setup_compiler(tmp_path)

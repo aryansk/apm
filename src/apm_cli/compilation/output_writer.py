@@ -74,17 +74,24 @@ class CompiledOutputWriter:
         self,
         outputs: Mapping[Path, str],
         *,
-        preserve_line_endings: bool = False,
+        preserve_line_endings: bool | Mapping[Path, bool] = False,
     ) -> ScanVerdict:
         """Validate a batch, then persist it only through atomic writes.
 
         ``preserve_line_endings`` is for managed-section outputs whose
-        hand-authored content must retain its original byte representation.
+        hand-authored content must retain its original byte representation. A
+        mapping selects that behavior per output while preserving a single
+        validate-then-write batch.
         """
         prepared, verdict = self.prepare(outputs)
         for path, final in prepared.items():
             path.parent.mkdir(parents=True, exist_ok=True)
-            atomic_write_text(path, final, normalize_line_endings=not preserve_line_endings)
+            preserve = (
+                preserve_line_endings.get(path, False)
+                if isinstance(preserve_line_endings, Mapping)
+                else preserve_line_endings
+            )
+            atomic_write_text(path, final, normalize_line_endings=not preserve)
         return verdict
 
     def write(

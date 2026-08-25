@@ -88,6 +88,15 @@ def test_compile_clean_preserves_nested_git_worktree_agents_file(
     nested_agents_before = nested_agents.read_bytes()
     nested_descendant_agents_before = nested_descendant_agents.read_bytes()
 
+    nested_repository = parent / "nested-repository"
+    nested_repository.mkdir()
+    _run_git(nested_repository, environment, "init", "--initial-branch=main")
+    nested_repository_agents = nested_repository / "AGENTS.md"
+    nested_repository_agents.write_bytes(_GENERATED_AGENTS)
+    _run_git(nested_repository, environment, "add", "AGENTS.md")
+    _run_git(nested_repository, environment, "commit", "-m", "seed nested repository agents")
+    nested_repository_agents_before = nested_repository_agents.read_bytes()
+
     parent_orphan = parent / "stale" / "AGENTS.md"
     parent_orphan.parent.mkdir()
     parent_orphan.write_bytes(_GENERATED_AGENTS)
@@ -112,7 +121,9 @@ def test_compile_clean_preserves_nested_git_worktree_agents_file(
     assert hand_authored.read_bytes() == hand_authored_before
     assert nested_agents.read_bytes() == nested_agents_before
     assert nested_descendant_agents.read_bytes() == nested_descendant_agents_before
+    assert nested_repository_agents.read_bytes() == nested_repository_agents_before
     assert _run_git(nested, environment, "status", "--porcelain").stdout == ""
+    assert _run_git(nested_repository, environment, "status", "--porcelain").stdout == ""
 
 
 def test_compile_force_instructions_preserves_managed_files_and_nested_repositories(
@@ -144,8 +155,14 @@ def test_compile_force_instructions_preserves_managed_files_and_nested_repositor
         "---\ndescription: Source lifecycle fixture\napplyTo: 'src/**/*.py'\n---\nKeep source changes local.\n",
         encoding="utf-8",
     )
+    (instructions / "new.instructions.md").write_text(
+        "---\ndescription: New lifecycle fixture\napplyTo: 'new/**/*.py'\n---\nGenerate new guidance.\n",
+        encoding="utf-8",
+    )
     (parent / "src").mkdir()
     (parent / "src" / "module.py").write_text("value = 1\n", encoding="utf-8")
+    (parent / "new").mkdir()
+    (parent / "new" / "module.py").write_text("value = 2\n", encoding="utf-8")
     _run_git(parent, environment, "add", "--all")
     _run_git(parent, environment, "commit", "-m", "seed parent")
 
@@ -210,8 +227,40 @@ def test_compile_force_instructions_preserves_managed_files_and_nested_repositor
         assert after.endswith(end_marker + suffix)
         assert old_block not in after
         assert AGENTS_MD_GENERATED_MARKER.encode() in after
+    new_agents = parent / "new" / "AGENTS.md"
+    assert AGENTS_MD_GENERATED_MARKER.encode() in new_agents.read_bytes()
     for path, snapshot in nested_snapshots.items():
         assert path.read_bytes() == snapshot
         assert AGENTS_MD_GENERATED_MARKER.encode() not in snapshot
     assert _run_git(nested_gitdir, environment, "status", "--porcelain").stdout == ""
     assert _run_git(nested_gitfile, environment, "status", "--porcelain").stdout == ""
+
+    managed_paths = (root_agents, src_agents, new_agents)
+    first_run_bytes = {path: path.read_bytes() for path in managed_paths}
+    repeat = ApmLifecycleRunner((str(apm_binary_path),)).run(
+        ("compile", "--target", "copilot", "--force-instructions"),
+        scenario_id="distributed-agents-owned-boundaries-idempotence",
+        cwd=parent,
+        env=environment,
+    )
+    assert repeat.returncode == 0, f"stdout={repeat.stdout!r}\nstderr={repeat.stderr!r}"
+    assert {path: path.read_bytes() for path in managed_paths} == first_run_bytes
+    assert _run_git(nested_gitdir, environment, "status", "--porcelain").stdout == ""
+    assert _run_git(nested_gitfile, environment, "status", "--porcelain").stdout == ""
+
+    src_agents.write_bytes(b"# Missing managed markers\n")
+    managed_orphan = parent / "stale" / "AGENTS.md"
+    managed_orphan.parent.mkdir()
+    managed_orphan.write_bytes(
+        b"# Retained guidance\n<!-- apm:start -->\nOld generated content\n<!-- apm:end -->\n"
+    )
+    invalid_run = ApmLifecycleRunner((str(apm_binary_path),)).run(
+        ("compile", "--target", "copilot", "--force-instructions", "--clean"),
+        scenario_id="distributed-agents-managed-section-preflight",
+        cwd=parent,
+        env=environment,
+    )
+    assert invalid_run.returncode != 0
+    assert root_agents.read_bytes() == first_run_bytes[root_agents]
+    assert new_agents.read_bytes() == first_run_bytes[new_agents]
+    assert managed_orphan.exists()
