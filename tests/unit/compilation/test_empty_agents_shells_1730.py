@@ -456,6 +456,13 @@ class TestCleanRemovesEmptyShells:
         )
         assert retained_orphan_warning in result.warnings
         assert result.warnings.count(retained_orphan_warning) == 1
+        assert any(
+            "global.instructions.md: No 'applyTo' pattern specified" in warning
+            for warning in result.warnings
+        )
+        assert all(
+            "run 'apm compile --clean' to remove" not in warning for warning in result.warnings
+        )
 
     def test_plain_compile_reports_managed_orphan_retention(self, project_with_stale_shell) -> None:
         """Without --clean, team-owned managed orphans remain actionable."""
@@ -484,6 +491,13 @@ class TestCleanRemovesEmptyShells:
         )
         assert retained_orphan_warning in result.warnings
         assert result.warnings.count(retained_orphan_warning) == 1
+        assert any(
+            "global.instructions.md: No 'applyTo' pattern specified" in warning
+            for warning in result.warnings
+        )
+        assert all(
+            "run 'apm compile --clean' to remove" not in warning for warning in result.warnings
+        )
 
 
 # ---------------------------------------------------------------------------
