@@ -34,5 +34,4 @@ def stabilize_build_id(content: str) -> str:
     hash_input_lines = [line for i, line in enumerate(lines) if i != idx]
     build_id = hashlib.sha256("\n".join(hash_input_lines).encode("utf-8")).hexdigest()[:12]
 
-    lines[idx] = f"<!-- Build ID: {build_id} -->"
     return content.replace(BUILD_ID_PLACEHOLDER, f"<!-- Build ID: {build_id} -->", 1)
