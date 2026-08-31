@@ -14,6 +14,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   placements safely, and never discovers, writes, or cleans content across
   nested Git repository or linked-worktree boundaries. (by @aryansk; fixes
   #2560 and #2713) (#2578)
+- Windows admin lifecycle policies now resolve from `%ProgramData%` instead of
+  assuming `C:\ProgramData`, while retaining the historical fallback.
+  (by @lukiod; closes #2684) (#2686)
 - Marketplace installs now materialize catalog-only LSP and MCP metadata
   without requiring a package manifest in the downloaded source
   (by @lkshrk, #2709).
