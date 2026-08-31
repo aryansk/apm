@@ -889,6 +889,11 @@ class DistributedAgentsCompiler:
         generated_set = set(generated_paths)
         suppressed_set = set(suppressed_empty_paths or [])
         deploy_inventory = self._deploy_inventory_for_cleanup()
+        for nested_root in sorted(deploy_inventory.nested_repository_roots):
+            _logger.debug(
+                "Skipping nested Git repository during orphan cleanup: %s",
+                portable_relpath(nested_root, self.base_dir),
+            )
         cleanup_directories = {
             entry.path: (entry.relative_path, entry.file_names)
             for entry in deploy_inventory.directories
