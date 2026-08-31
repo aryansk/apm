@@ -207,50 +207,12 @@ if ! python3 scripts/check_compile_inventory_authority.py; then
     echo "[x] Compile traversal must use the shared inventory"
     violations=$((violations + 1))
 fi
-nested_repository_inventory_count=$(grep -Fc \
-    'deploy_inventory = self._deploy_inventory_for_cleanup()' "$distributed_compiler" || true)
-nested_repository_roots_count=$(grep -Fc \
-    'nested_repository_roots = frozenset(' "$distributed_compiler" || true)
-nested_repository_boundary_count=$(grep -Fc \
-    'git_metadata := entry.path / ".git").is_file()' "$distributed_compiler" || true)
-nested_repository_directory_count=$(grep -Fc 'or git_metadata.is_dir()' "$distributed_compiler" || true)
-nested_repository_prune_count=$(grep -Fc \
-    'ancestor in nested_repository_roots' "$distributed_compiler" || true)
-if [ "$nested_repository_inventory_count" -ne 1 ] \
-    || [ "$nested_repository_roots_count" -ne 1 ] \
-    || [ "$nested_repository_boundary_count" -ne 1 ] \
-    || [ "$nested_repository_directory_count" -ne 1 ] \
-    || [ "$nested_repository_prune_count" -ne 1 ]; then
-    echo "[x] Nested Git cleanup must prune nested repository roots"
-    violations=$((violations + 1))
-fi
 agents_source_attribution_output=$(python3 scripts/check_agents_source_attribution_owner.py \
     "$distributed_compiler" 2>&1)
 agents_source_attribution_status=$?
 if [ "$agents_source_attribution_status" -ne 0 ]; then
     echo "[x] AGENTS.md cosmetics must use the canonical source_attribution config boolean"
     echo "$agents_source_attribution_output"
-    violations=$((violations + 1))
-fi
-agents_compiler="src/apm_cli/compilation/agents_compiler.py"
-distributed_prepare_count=$(grep -Ec '^    def _prepare_distributed_file\(' "$agents_compiler" || true)
-distributed_nested_boundary_call_count=$(grep -Fc \
-    'nested_root = self._nested_git_repository_root(agents_path.parent)' "$agents_compiler" || true)
-distributed_nested_boundary_reference_count=$(grep -Fc \
-    '_nested_git_repository_root(' "$agents_compiler" || true)
-distributed_git_metadata_predicate_count=$(grep -Fc \
-    'git_metadata.is_file() or git_metadata.is_dir()' "$agents_compiler" || true)
-distributed_path_containment_count=$(grep -Fc \
-    'current = ensure_path_within(directory, base_dir)' "$agents_compiler" || true)
-distributed_prepare_call_count=$(grep -Fc \
-    'prepared_content = self._prepare_distributed_file(' "$agents_compiler" || true)
-if [ "$distributed_prepare_count" -ne 1 ] \
-    || [ "$distributed_nested_boundary_call_count" -ne 1 ] \
-    || [ "$distributed_nested_boundary_reference_count" -ne 2 ] \
-    || [ "$distributed_git_metadata_predicate_count" -ne 1 ] \
-    || [ "$distributed_path_containment_count" -ne 1 ] \
-    || [ "$distributed_prepare_call_count" -ne 2 ]; then
-    echo "[x] Distributed AGENTS writes must prepare through one nested Git boundary"
     violations=$((violations + 1))
 fi
 agents_footer_output=$(python3 scripts/check_agents_footer_authority.py "$ROOT" 2>&1)

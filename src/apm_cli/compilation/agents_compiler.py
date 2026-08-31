@@ -345,7 +345,6 @@ class AgentsCompiler:
         self._distributed_context_optimizer: ContextOptimizer | None = None
         self._source_inventory: CompileInventory | None = None
         self._deploy_inventory: CompileInventory | None = None
-        self._nested_git_root_cache: dict[Path, Path | None] = {}
 
     def _log(self, method: str, message: str, **kwargs):
         """Delegate to logger if available, else no-op."""
@@ -414,8 +413,6 @@ class AgentsCompiler:
             if self.source_dir == self.base_dir and not config.exclude
             else CompileInventory.collect(self.base_dir)
         )
-        self._nested_git_root_cache.clear()
-
         try:
             # Use provided primitives or discover them (with dependency support)
             if primitives is None:
@@ -1721,7 +1718,8 @@ class AgentsCompiler:
         """
         try:
             ensure_path_within(agents_path, self.base_dir)
-            nested_root = self._nested_git_repository_root(agents_path.parent)
+            deploy_inventory = self._deploy_inventory or CompileInventory.collect(self.base_dir)
+            nested_root = deploy_inventory.nested_repository_root_for(agents_path.parent)
             if nested_root is not None:
                 agents_rel = portable_relpath(agents_path, self.base_dir)
                 root_rel = portable_relpath(nested_root, self.base_dir)
@@ -1806,31 +1804,6 @@ class AgentsCompiler:
             preserve_line_endings=config.agents_md_mode == "managed_section"
             and agents_path.is_file(),
         )
-
-    def _nested_git_repository_root(self, directory: Path) -> Path | None:
-        """Return a nested repository root below the compiler base, if any."""
-        base_dir = self.base_dir.resolve()
-        current = ensure_path_within(directory, base_dir)
-        visited: list[Path] = []
-        while True:
-            if current in self._nested_git_root_cache:
-                nested_root = self._nested_git_root_cache[current]
-                break
-            if current == base_dir:
-                nested_root = None
-                break
-            visited.append(current)
-            git_metadata = current / ".git"
-            if git_metadata.is_file() or git_metadata.is_dir():
-                nested_root = current
-                break
-            if current == current.parent:
-                nested_root = None
-                break
-            current = current.parent
-        for path in visited:
-            self._nested_git_root_cache[path] = nested_root
-        return nested_root
 
     def _display_placement_preview(self, distributed_result) -> None:
         """Display placement preview for --show-placement mode.

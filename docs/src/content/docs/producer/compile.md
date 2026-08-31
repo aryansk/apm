@@ -9,6 +9,11 @@ root context files each agent harness reads at startup. It does not
 fetch packages, does not resolve dependencies, does not write the
 lockfile, and does not deploy other primitive types.
 
+Compile is bounded to the active Git checkout. It does not discover
+instructions inside a nested Git repository or linked worktree, even when
+`includes: auto` is set, and it does not write or clean generated files there.
+Run `apm compile` from the nested checkout when you want to compile it.
+
 :::note[When you actually need it]
 Compile is **optional for the `copilot` target** -- GitHub Copilot
 natively reads `.github/instructions/*.instructions.md` (with their
@@ -249,7 +254,7 @@ you can omit `start_marker` and `end_marker` if you use those verbatim.
   describing the whole file as generated.
 - In distributed compile mode, the same marker rules apply to every generated
   `AGENTS.md`. A placement in a nested Git repository (a `.git` directory or
-  gitfile), including its descendants, is skipped with a warning.
+  gitfile), including its descendants, is excluded from discovery and output.
 - After adding markers and enabling managed-section mode, use
   `apm compile --dry-run --clean` to inspect the eligible placement set. The
   preview excludes nested repositories and reports managed orphan files that

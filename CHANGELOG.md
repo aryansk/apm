@@ -18,8 +18,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `My%20Projects`. (by @aryansk; fixes #2554) (#2584)
 - Distributed `apm compile` now reconciles existing managed-section
   `AGENTS.md` files without overwriting hand-authored content, generates new
-  placements safely, and never writes or cleans nested Git repositories or
-  worktrees. (#2578)
+  placements safely, and never discovers, writes, or cleans content across
+  nested Git repository or linked-worktree boundaries. (fixes #2560 and #2713)
+  (#2578)
 - `apm lock export --timestamp` now rejects malformed or timezone-naive values
   before they enter CycloneDX or SPDX metadata. (by @manideep-malyala; fixes
   #2659) (#2660)

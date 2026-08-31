@@ -1344,68 +1344,42 @@ def test_gitlab_policy_adapter_guard_survives_nested_facade_else(tmp_path: Path)
 
 
 @pytest.mark.parametrize(
-    ("guard", "replacement"),
-    [
-        ('(git_metadata := entry.path / ".git").is_file()', "False"),
-        ("nested_repository_roots = frozenset(", "nested_repository_roots = tuple("),
-        ("ancestor in nested_repository_roots", "False"),
-    ],
-)
-def test_nested_worktree_cleanup_guard_rejects_unbounded_agents_scan(
-    tmp_path: Path, guard: str, replacement: str
-) -> None:
-    """The cleanup boundary guard requires detection and pruning."""
-    root = Path(__file__).parents[2]
-    sandbox = tmp_path / "repo"
-    shutil.copytree(
-        root,
-        sandbox,
-        ignore=shutil.ignore_patterns(
-            ".git",
-            ".venv",
-            ".pytest_cache",
-            "__pycache__",
-            "build",
-            "dist",
-            "node_modules",
-        ),
-    )
-    compiler_path = sandbox / "src/apm_cli/compilation/distributed_compiler.py"
-    source = compiler_path.read_text(encoding="utf-8")
-    assert source.count(guard) == 1
-    compiler_path.write_text(
-        source.replace(guard, replacement, 1),
-        encoding="utf-8",
-    )
-
-    result = subprocess.run(
-        ("bash", "scripts/lint-architecture-boundaries.sh"),
-        cwd=sandbox,
-        capture_output=True,
-        text=True,
-        check=False,
-        timeout=300,
-    )
-
-    assert result.returncode == 1
-    assert "Nested Git cleanup must prune nested repository roots" in result.stdout
-
-
-@pytest.mark.parametrize(
-    ("guard", "replacement"),
+    ("relative_path", "guard", "replacement"),
     [
         (
-            "nested_root = self._nested_git_repository_root(agents_path.parent)",
+            "src/apm_cli/compilation/inventory.py",
+            "if path != root and (git_metadata.is_file() or git_metadata.is_dir()):",
+            "if False:",
+        ),
+        (
+            "src/apm_cli/compilation/agents_compiler.py",
+            "nested_root = deploy_inventory.nested_repository_root_for(agents_path.parent)",
             "nested_root = None",
         ),
-        ("git_metadata.is_file() or git_metadata.is_dir()", "False"),
-        ("current = ensure_path_within(directory, base_dir)", "current = directory.resolve()"),
+        (
+            "src/apm_cli/compilation/distributed_compiler.py",
+            "if deploy_inventory.nested_repository_root_for(directory_path) is not None:",
+            "if False:",
+        ),
+        (
+            "src/apm_cli/primitives/discovery.py",
+            "inventory = CompileInventory.collect(base_path, exclude_patterns=exclude_patterns)",
+            "inventory = None",
+        ),
+        (
+            "src/apm_cli/primitives/discovery.py",
+            "if inventory is not None and inventory.nested_repository_root_for(directory) is not None:",
+            "if False:",
+        ),
     ],
 )
-def test_distributed_agents_write_guard_rejects_nested_repository_bypass(
-    tmp_path: Path, guard: str, replacement: str
+def test_compile_nested_git_boundary_rejects_split_authority(
+    tmp_path: Path,
+    relative_path: str,
+    guard: str,
+    replacement: str,
 ) -> None:
-    """The preparation boundary must reject a nested-repository bypass."""
+    """The static guard rejects bypasses of the canonical inventory owner."""
     root = Path(__file__).parents[2]
     sandbox = tmp_path / "repo"
     shutil.copytree(
@@ -1421,9 +1395,10 @@ def test_distributed_agents_write_guard_rejects_nested_repository_bypass(
             "node_modules",
         ),
     )
-    compiler_path = sandbox / "src/apm_cli/compilation/agents_compiler.py"
-    source = compiler_path.read_text(encoding="utf-8")
-    compiler_path.write_text(
+    mutated_path = sandbox / relative_path
+    source = mutated_path.read_text(encoding="utf-8")
+    assert source.count(guard) == 1
+    mutated_path.write_text(
         source.replace(guard, replacement, 1),
         encoding="utf-8",
     )
@@ -1438,7 +1413,36 @@ def test_distributed_agents_write_guard_rejects_nested_repository_bypass(
     )
 
     assert result.returncode == 1
-    assert "Distributed AGENTS writes must prepare through one nested Git boundary" in result.stdout
+    assert (
+        "Compile nested Git boundaries must route through compilation/inventory.py" in result.stdout
+    )
+
+
+def test_compile_nested_git_boundary_has_single_owner() -> None:
+    """Discovery, writes, and cleanup consume the inventory-owned decision."""
+    root = Path(__file__).parents[2]
+    inventory = (root / "src/apm_cli/compilation/inventory.py").read_text(encoding="utf-8")
+    agents = (root / "src/apm_cli/compilation/agents_compiler.py").read_text(encoding="utf-8")
+    distributed = (root / "src/apm_cli/compilation/distributed_compiler.py").read_text(
+        encoding="utf-8"
+    )
+    discovery = (root / "src/apm_cli/primitives/discovery.py").read_text(encoding="utf-8")
+    architecture = (root / ".apm/instructions/architecture.instructions.md").read_text(
+        encoding="utf-8",
+    )
+
+    assert inventory.count("def nested_repository_root_for(") == 1
+    assert "if path != root and (git_metadata.is_file() or git_metadata.is_dir())" in inventory
+    assert "deploy_inventory.nested_repository_root_for(agents_path.parent)" in agents
+    assert "deploy_inventory.nested_repository_root_for(directory_path)" in distributed
+    assert "inventory.files_within(base_path)" in discovery
+    assert "inventory.nested_repository_root_for(directory)" in discovery
+    assert ' / ".git"' not in agents
+    assert ' / ".git"' not in distributed
+    assert "| Compile traversal and nested Git repository boundary |" in architecture
+    assert architecture == (root / ".github/instructions/architecture.instructions.md").read_text(
+        encoding="utf-8"
+    )
 
 
 def test_experimental_target_hints_have_single_owner() -> None:

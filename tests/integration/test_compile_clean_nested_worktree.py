@@ -52,6 +52,61 @@ def _git_environment(base_env: dict[str, str]) -> dict[str, str]:
     }
 
 
+def test_compile_excludes_linked_worktree_primitives(
+    tmp_path: Path,
+    apm_binary_path: Path,
+) -> None:
+    """Compile only primitives owned by the active Git checkout."""
+    isolated = IsolatedApmEnvironment.create(tmp_path / "workspace", base_env=dict(os.environ))
+    environment = _git_environment(isolated.subprocess_env())
+    parent = isolated.work_root / "parent"
+    parent.mkdir()
+    _run_git(parent, environment, "init", "--initial-branch=main")
+    (parent / ".gitignore").write_text(".worktrees/\n", encoding="utf-8")
+    (parent / "apm.yml").write_text(
+        "name: nested-worktree-discovery\n"
+        "version: 1.0.0\n"
+        "target:\n"
+        "  - claude\n"
+        "  - codex\n"
+        "includes: auto\n",
+        encoding="utf-8",
+    )
+    instructions = parent / ".apm" / "instructions"
+    instructions.mkdir(parents=True)
+    (instructions / "own.instructions.md").write_text(
+        "---\ndescription: Main only.\n---\n# Own\nOWN-SENTINEL\n",
+        encoding="utf-8",
+    )
+    _run_git(parent, environment, "add", "--all")
+    _run_git(parent, environment, "commit", "-m", "seed parent")
+    _run_git(parent, environment, "checkout", "-b", "other")
+    (instructions / "foreign.instructions.md").write_text(
+        "---\ndescription: Other branch only.\n---\n# Foreign\nFOREIGN-SENTINEL\n",
+        encoding="utf-8",
+    )
+    _run_git(parent, environment, "add", "--all")
+    _run_git(parent, environment, "commit", "-m", "seed other branch")
+    _run_git(parent, environment, "checkout", "main")
+    nested = parent / ".worktrees" / "other"
+    _run_git(parent, environment, "worktree", "add", str(nested), "other")
+
+    result = ApmLifecycleRunner((str(apm_binary_path),)).run(
+        ("compile",),
+        scenario_id="compile-excludes-linked-worktree-primitives",
+        cwd=parent,
+        env=environment,
+    )
+
+    assert result.returncode == 0, f"stdout={result.stdout!r}\nstderr={result.stderr!r}"
+    for output_name in ("AGENTS.md", "CLAUDE.md"):
+        output = (parent / output_name).read_text(encoding="utf-8")
+        assert "OWN-SENTINEL" in output
+        assert "FOREIGN-SENTINEL" not in output
+    assert "foreign.instructions.md" not in result.stdout
+    assert "foreign.instructions.md" not in result.stderr
+
+
 def test_compile_clean_preserves_nested_git_worktree_agents_file(
     tmp_path: Path,
     apm_binary_path: Path,

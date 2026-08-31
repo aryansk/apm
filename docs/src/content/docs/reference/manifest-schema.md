@@ -257,8 +257,9 @@ sources. Three forms are supported:
    selected source layout. `apm audit` emits an `includes-consent` advisory
    whenever local content is deployed under this form.
 2. **`includes: auto`**. Explicit consent to publish all local content from the
-   selected source layout. No path enumeration required. Default for newly
-   initialised projects.
+   selected source layout in the active Git checkout. Nested Git repositories
+   and linked worktrees are excluded from compile discovery. No path enumeration
+   required. Default for newly initialised projects.
 3. **`includes: [<path>, ...]`**. Explicit consent list for deployment and the
    exhaustive allow-list for plugin packing. Listed paths may be under `.apm/`
    or a plugin-native root directory. Missing, unsafe, symlinked, or unpackable
@@ -845,7 +846,7 @@ Controls how `apm compile` writes `AGENTS.md` output files. All fields are OPTIO
 | `start_marker` | `string` | `<!-- apm:start -->` | Non-empty, distinct from `end_marker` | Opening HTML comment that delimits the APM-managed block. Required in the output file when `mode: managed_section`. |
 | `end_marker` | `string` | `<!-- apm:end -->` | Non-empty, distinct from `start_marker` | Closing HTML comment that delimits the APM-managed block. Required in the output file when `mode: managed_section`. |
 
-Both markers must appear **exactly once** in every existing managed target file; a missing or duplicate marker raises `ManagedSectionError` rather than silently overwriting content. Distributed placements in a nested Git repository (a `.git` directory or gitfile) are skipped with a warning, including descendants of that repository. Use `apm compile --dry-run` to preview the same eligible placement set before writing files.
+Both markers must appear **exactly once** in every existing managed target file; a missing or duplicate marker raises `ManagedSectionError` rather than silently overwriting content. Compile excludes primitives and distributed placements in a nested Git repository (a `.git` directory or gitfile), including descendants of that repository. Use `apm compile --dry-run` to preview the same eligible placement set before writing files.
 
 See [Managed-section mode](../../producer/compile/#managed-section-mode) in the compile guide for usage and marker setup instructions.
 

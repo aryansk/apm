@@ -889,14 +889,6 @@ class DistributedAgentsCompiler:
         generated_set = set(generated_paths)
         suppressed_set = set(suppressed_empty_paths or [])
         deploy_inventory = self._deploy_inventory_for_cleanup()
-        nested_repository_roots = frozenset(
-            entry.relative_path
-            for entry in deploy_inventory.directories
-            if (
-                entry.path != self.base_dir
-                and ((git_metadata := entry.path / ".git").is_file() or git_metadata.is_dir())
-            )
-        )
         cleanup_directories = {
             entry.path: (entry.relative_path, entry.file_names)
             for entry in deploy_inventory.directories
@@ -913,15 +905,7 @@ class DistributedAgentsCompiler:
                 continue
             if "AGENTS.md" not in files:
                 continue
-            if any(
-                ancestor in nested_repository_roots
-                for ancestor in (relative_path, *relative_path.parents)
-            ):
-                if relative_path in nested_repository_roots:
-                    _logger.debug(
-                        "Skipping nested Git repository during orphan cleanup: %s",
-                        portable_relpath(directory_path, self.base_dir),
-                    )
+            if deploy_inventory.nested_repository_root_for(directory_path) is not None:
                 continue
 
             agents_file = directory_path / "AGENTS.md"
