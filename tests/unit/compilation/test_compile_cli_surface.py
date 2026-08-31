@@ -726,7 +726,7 @@ class TestCompileCommandDistributedSuccess:
 
         assert result.exit_code == 0
         normalized_output = " ".join(result.output.split())
-        assert "Compiled 2 output files (2 AGENTS.md files)" in normalized_output
+        assert "Compiled 3 output files (2 AGENTS.md files)" in normalized_output
         assert "skipped 1 nested Git repository placement" in normalized_output
 
     def test_result_errors_exits_1(self) -> None:

@@ -145,7 +145,10 @@ def test_compile_root_reports_skipped_nested_repository_placement(
     assert (destination / "AGENTS.md").is_file()
     assert not (destination / "src" / "AGENTS.md").exists()
     assert "Compiled 1 output file (1 AGENTS.md file)" in result.stdout
-    assert "Run apm compile from src to compile it separately" in result.stdout
+    unwrapped_stdout = result.stdout.replace("\n", "")
+    assert (
+        f"Run apm compile from {destination / 'src'} to compile it separately" in unwrapped_stdout
+    )
 
 
 def test_compile_clean_preserves_nested_git_worktree_agents_file(

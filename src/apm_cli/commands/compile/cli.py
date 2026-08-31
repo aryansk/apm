@@ -767,14 +767,20 @@ def _run_compilation(
                 # unreachable in normal flow, but silent zero-effect
                 # success is the worst-case package-manager DX.
                 #
-                # Pattern-based stat scan (instead of a hardcoded key
-                # list) so new compile-time targets pick up the guard
-                # automatically: any stat ending in ``_files_written``
-                # or ``_files_generated`` contributes to the total.
-                _files_written = sum(
-                    int(v or 0)
-                    for k, v in result.stats.items()
-                    if k.endswith(("_files_written", "_files_generated"))
+                agents_generated = int(
+                    result.stats.get(
+                        "agents_files_generated",
+                        result.stats.get("agents_files_written", 0),
+                    )
+                    or 0
+                )
+                _files_written = agents_generated + sum(
+                    int(result.stats.get(key, 0) or 0)
+                    for key in (
+                        "claude_files_written",
+                        "gemini_files_written",
+                        "copilot_root_instructions_written",
+                    )
                 )
                 if _files_written > 0:
                     nested_skips = max(
@@ -786,13 +792,6 @@ def _run_compilation(
                         ),
                     )
                     if nested_skips:
-                        agents_generated = int(
-                            result.stats.get(
-                                "agents_files_generated",
-                                result.stats.get("agents_files_written", 0),
-                            )
-                            or 0
-                        )
                         output_noun = "file" if _files_written == 1 else "files"
                         generated_noun = "file" if agents_generated == 1 else "files"
                         skipped_noun = "placement" if nested_skips == 1 else "placements"

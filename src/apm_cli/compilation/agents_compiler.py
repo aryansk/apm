@@ -1726,7 +1726,7 @@ class AgentsCompiler:
                 self.warnings.append(
                     f"Skipping AGENTS.md at {agents_rel}: nested Git repository "
                     f"{root_rel} belongs to a separate repository. "
-                    f"Run apm compile from {root_rel} to compile it separately"
+                    f"Run apm compile from {nested_root} to compile it separately"
                 )
                 return None
 

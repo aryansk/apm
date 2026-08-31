@@ -257,9 +257,8 @@ sources. Three forms are supported:
    selected source layout. `apm audit` emits an `includes-consent` advisory
    whenever local content is deployed under this form.
 2. **`includes: auto`**. Explicit consent to publish all local content from the
-   selected source layout in the active Git checkout. Nested Git repositories
-   and linked worktrees are excluded from compile discovery. No path enumeration
-   required. Default for newly initialised projects.
+   selected source layout. No path enumeration required. Default for newly
+   initialised projects.
 3. **`includes: [<path>, ...]`**. Explicit consent list for deployment and the
    exhaustive allow-list for plugin packing. Listed paths may be under `.apm/`
    or a plugin-native root directory. Missing, unsafe, symlinked, or unpackable
@@ -284,6 +283,10 @@ For plugin packing, `includes:` is allow-list only. There is no `exclude:`
 form. To keep maintainer-only primitives out of shipped artifacts, author them
 outside the selected source layout and reference them via a local-path
 devDependency. See [Dev-only Primitives](../../concepts/primitives-and-targets/#dev-only-primitives).
+
+Compile discovery independently stops at nested Git repositories and linked
+worktrees. This active-checkout boundary applies whether `includes` is `auto`,
+an explicit list, or omitted.
 
 When `policy.manifest.require_explicit_includes` is `true` (see [Policy reference](../../enterprise/policy-reference/)), only form 3 passes; `auto` and undeclared are rejected at install/audit time by the `explicit-includes` check (not at YAML parse time).
 
