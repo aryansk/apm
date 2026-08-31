@@ -63,8 +63,7 @@ class CompileInventory:
             if should_exclude(path, root, safe_patterns):
                 child_dirs[:] = []
                 continue
-            git_metadata = path / ".git"
-            if path != root and (git_metadata.is_file() or git_metadata.is_dir()):
+            if path != root and (".git" in file_names or ".git" in child_dirs):
                 nested_repository_roots.add(path)
                 child_dirs[:] = []
                 continue

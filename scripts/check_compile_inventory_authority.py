@@ -32,8 +32,7 @@ def main() -> int:
         and _has_all(
             inventory,
             (
-                'git_metadata = path / ".git"',
-                "if path != root and (git_metadata.is_file() or git_metadata.is_dir()):",
+                'if path != root and (".git" in file_names or ".git" in child_dirs):',
                 "nested_repository_roots.add(path)",
                 "def nested_repository_root_for(",
             ),

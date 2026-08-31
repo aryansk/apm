@@ -1725,7 +1725,8 @@ class AgentsCompiler:
                 root_rel = portable_relpath(nested_root, self.base_dir)
                 self.warnings.append(
                     f"Skipping AGENTS.md at {agents_rel}: nested Git repository "
-                    f"{root_rel} belongs to a separate repository"
+                    f"{root_rel} belongs to a separate repository. "
+                    f"Run apm compile from {root_rel} to compile it separately"
                 )
                 return None
 

@@ -777,7 +777,14 @@ def _run_compilation(
                     if k.endswith(("_files_written", "_files_generated"))
                 )
                 if _files_written > 0:
-                    nested_skips = int(result.stats.get("nested_git_placements_skipped", 0) or 0)
+                    nested_skips = max(
+                        int(result.stats.get("nested_git_placements_skipped", 0) or 0),
+                        sum(
+                            "Skipping AGENTS.md at " in warning
+                            and ": nested Git repository " in warning
+                            for warning in result.warnings
+                        ),
+                    )
                     if nested_skips:
                         agents_generated = int(
                             result.stats.get(
@@ -786,10 +793,12 @@ def _run_compilation(
                             )
                             or 0
                         )
+                        output_noun = "file" if _files_written == 1 else "files"
                         generated_noun = "file" if agents_generated == 1 else "files"
                         skipped_noun = "placement" if nested_skips == 1 else "placements"
                         logger.success(
-                            f"Compiled {agents_generated} AGENTS.md {generated_noun}; "
+                            f"Compiled {_files_written} output {output_noun} "
+                            f"({agents_generated} AGENTS.md {generated_noun}); "
                             f"skipped {nested_skips} nested Git repository {skipped_noun}.",
                             symbol="check",
                         )

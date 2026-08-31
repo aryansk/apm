@@ -1348,7 +1348,7 @@ def test_gitlab_policy_adapter_guard_survives_nested_facade_else(tmp_path: Path)
     [
         (
             "src/apm_cli/compilation/inventory.py",
-            "if path != root and (git_metadata.is_file() or git_metadata.is_dir()):",
+            'if path != root and (".git" in file_names or ".git" in child_dirs):',
             "if False:",
         ),
         (
@@ -1432,7 +1432,7 @@ def test_compile_nested_git_boundary_has_single_owner() -> None:
     )
 
     assert inventory.count("def nested_repository_root_for(") == 1
-    assert "if path != root and (git_metadata.is_file() or git_metadata.is_dir())" in inventory
+    assert 'if path != root and (".git" in file_names or ".git" in child_dirs)' in inventory
     assert "deploy_inventory.nested_repository_root_for(agents_path.parent)" in agents
     assert "deploy_inventory.nested_repository_root_for(directory_path)" in distributed
     assert "inventory.files_within(base_path)" in discovery

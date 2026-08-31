@@ -725,7 +725,7 @@ class TestCompileCommandDistributedSuccess:
                 result = runner.invoke(cli, ["compile"])
 
         assert result.exit_code == 0
-        assert "Compiled 2 AGENTS.md files" in result.output
+        assert "Compiled 3 output files (2 AGENTS.md files)" in result.output
         assert "skipped 1 nested Git repository placement" in result.output
 
     def test_result_errors_exits_1(self) -> None:

@@ -97,7 +97,6 @@ def test_compile_excludes_linked_worktree_primitives(
         cwd=parent,
         env=environment,
     )
-
     assert result.returncode == 0, f"stdout={result.stdout!r}\nstderr={result.stderr!r}"
     for output_name in ("AGENTS.md", "CLAUDE.md"):
         output = (parent / output_name).read_text(encoding="utf-8")
@@ -105,6 +104,48 @@ def test_compile_excludes_linked_worktree_primitives(
         assert "FOREIGN-SENTINEL" not in output
     assert "foreign.instructions.md" not in result.stdout
     assert "foreign.instructions.md" not in result.stderr
+
+
+def test_compile_root_reports_skipped_nested_repository_placement(
+    tmp_path: Path,
+    apm_binary_path: Path,
+) -> None:
+    """Root redirection reports outputs omitted at the destination boundary."""
+    isolated = IsolatedApmEnvironment.create(tmp_path / "workspace", base_env=dict(os.environ))
+    environment = isolated.subprocess_env()
+    source = isolated.work_root / "source"
+    source.mkdir()
+    (source / "apm.yml").write_text(
+        "name: nested-root-output\nversion: 1.0.0\ntarget: codex\n",
+        encoding="utf-8",
+    )
+    instructions = source / ".apm" / "instructions"
+    instructions.mkdir(parents=True)
+    (instructions / "root.instructions.md").write_text(
+        "---\ndescription: Root.\n---\nROOT-SENTINEL\n",
+        encoding="utf-8",
+    )
+    (instructions / "scoped.instructions.md").write_text(
+        "---\ndescription: Scoped.\napplyTo: 'src/**/*.py'\n---\nSCOPED-SENTINEL\n",
+        encoding="utf-8",
+    )
+    (source / "src").mkdir()
+    (source / "src" / "module.py").write_text("value = 1\n", encoding="utf-8")
+    destination = isolated.work_root / "destination"
+    (destination / "src" / ".git").mkdir(parents=True)
+
+    result = ApmLifecycleRunner((str(apm_binary_path),)).run(
+        ("compile", "--root", str(destination), "--force-instructions"),
+        scenario_id="compile-reports-skipped-nested-placement",
+        cwd=source,
+        env=environment,
+    )
+
+    assert result.returncode == 0, f"stdout={result.stdout!r}\nstderr={result.stderr!r}"
+    assert (destination / "AGENTS.md").is_file()
+    assert not (destination / "src" / "AGENTS.md").exists()
+    assert "Compiled 1 output file (1 AGENTS.md file)" in result.stdout
+    assert "Run apm compile from src to compile it separately" in result.stdout
 
 
 def test_compile_clean_preserves_nested_git_worktree_agents_file(
