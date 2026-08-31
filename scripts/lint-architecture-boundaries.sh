@@ -253,6 +253,12 @@ if [ "$distributed_prepare_count" -ne 1 ] \
     echo "[x] Distributed AGENTS writes must prepare through one nested Git boundary"
     violations=$((violations + 1))
 fi
+agents_footer_output=$(python3 scripts/check_agents_footer_authority.py "$ROOT" 2>&1)
+agents_footer_status=$?
+if [ "$agents_footer_status" -ne 0 ]; then
+    echo "$agents_footer_output"
+    violations=$((violations + 1))
+fi
 hook_file="src/apm_cli/integration/hook_integrator.py"
 validation_line=$(grep -n 'if not validation\.valid:' "$hook_file" | tail -1 | cut -d: -f1)
 continue_line=$(awk -v start="$validation_line" 'NR > start && /continue/ {print NR; exit}' "$hook_file")
@@ -481,6 +487,47 @@ if [ "$policy_named_defs" -ne 2 ] \
     || [ -n "$policy_duplicate_hits" ]; then
     echo "[x] Cached policy shape must route through policy/discovery.py::_policy_to_dict"
     [ -n "$policy_duplicate_hits" ] && echo "$policy_duplicate_hits"
+    violations=$((violations + 1))
+fi
+gitlab_policy_adapter="src/apm_cli/policy/_gitlab.py"
+gitlab_adapter_definition_count=$(grep -Ec \
+    '^def (_fetch_from_gitlab_repo|_fetch_gitlab_contents|_gitlab_project_state_via_git|_fetch_gitlab_chain_parent)\(' \
+    "$gitlab_policy_adapter" || true)
+gitlab_adapter_duplicate_hits=$(
+    grep -rEn --include='*.py' \
+        '^def (_fetch_from_gitlab_repo|_fetch_gitlab_contents|_gitlab_project_state_via_git|_fetch_gitlab_chain_parent)\(' \
+        src/apm_cli/policy \
+        | grep -v "^${gitlab_policy_adapter}:" \
+        | grep -v 'architecture-authority-exempt:' \
+        || true
+)
+gitlab_facade_call_count=$(grep -Ec \
+    '_gitlab\._fetch_(from_gitlab_repo|gitlab_chain_parent)\(' \
+    "$policy_file" || true)
+if [ "$gitlab_adapter_definition_count" -ne 4 ] \
+    || [ -n "$gitlab_adapter_duplicate_hits" ] \
+    || [ "$gitlab_facade_call_count" -ne 2 ]; then
+    echo "[x] GitLab policy discovery must route through policy/_gitlab.py"
+    [ -n "$gitlab_adapter_duplicate_hits" ] && echo "$gitlab_adapter_duplicate_hits"
+    violations=$((violations + 1))
+fi
+gitlab_facade_branch=$(awk '
+    /^[[:space:]]*elif is_gitlab_hostname\(host\):/ {
+        capture=1
+        branch_indent=match($0, /[^[:space:]]/) - 1
+        next
+    }
+    capture && /^[[:space:]]*else:/ && match($0, /[^[:space:]]/) - 1 == branch_indent {exit}
+    capture {print}
+' "$policy_file")
+gitlab_facade_orchestration_hits=$(
+    printf '%s\n' "$gitlab_facade_branch" \
+        | grep -E '(_read_cache_entry|_write_cache|requests\.|AuthResolver|subprocess\.run|_fetch_gitlab_contents|_gitlab_project_state_via_git)' \
+        || true
+)
+if [ -n "$gitlab_facade_orchestration_hits" ]; then
+    echo "[x] GitLab policy cache and transport must remain in policy/_gitlab.py"
+    echo "$gitlab_facade_orchestration_hits"
     violations=$((violations + 1))
 fi
 local_bundle_handler="src/apm_cli/install/local_bundle_handler.py"
@@ -1109,12 +1156,72 @@ check_pattern \
     'to_repository_cache_url' \
     src/apm_cli
 
+echo "[*] AC11a: sparse-cone materialization authority"
+sparse_cone_owner="src/apm_cli/utils/git_sparse.py"
+sparse_cone_raw_set_hits=$(
+    grep -rEn --include='*.py' \
+        '"sparse-checkout",[[:space:]]*"set"' src/apm_cli \
+        | grep -v "^${sparse_cone_owner}:" \
+        | grep -v '^src/apm_cli/deps/git_file_transport.py:' \
+        | grep -v 'architecture-authority-exempt:' \
+        || true
+)
+if [ "$(grep -Ec '^def apply_sparse_cone\(' "$sparse_cone_owner")" -ne 1 ] \
+    || [ "$(grep -Ec '^def repair_dangling_cone_symlinks\(' "$sparse_cone_owner")" -ne 1 ] \
+    || [ "$(grep -Ec '^def _literal_pathspec\(' "$sparse_cone_owner")" -ne 1 ] \
+    || [ "$(grep -Fc '"ls-tree",' "$sparse_cone_owner")" -ne 2 ] \
+    || [ "$(grep -Fc '_literal_pathspec(path)' "$sparse_cone_owner")" -ne 2 ] \
+    || [ "$(grep -Ec '^    def _finalize_sparse_checkout\(' src/apm_cli/cache/git_cache.py)" -ne 1 ] \
+    || [ "$(grep -Fc 'self._finalize_sparse_checkout(' src/apm_cli/cache/git_cache.py)" -ne 3 ] \
+    || [ "$(grep -Fc 'repair_dangling_cone_symlinks(' src/apm_cli/cache/git_cache.py)" -ne 1 ] \
+    || [ "$(grep -Fc 'repair_dangling_cone_symlinks(' src/apm_cli/deps/bare_cache.py)" -ne 1 ] \
+    || [ "$(grep -Fc 'repair_dangling_cone_symlinks(' src/apm_cli/deps/github_downloader.py)" -ne 1 ] \
+    || ! grep -Fq 'return _repair(setup_env)' src/apm_cli/deps/github_downloader.py \
+    || ! grep -Fq 'return _repair(env)' src/apm_cli/deps/github_downloader.py \
+    || [ -n "$sparse_cone_raw_set_hits" ]; then
+    echo "[x] Sparse-cone materialization must route through utils/git_sparse.py"
+    [ -n "$sparse_cone_raw_set_hits" ] && echo "$sparse_cone_raw_set_hits"
+    violations=$((violations + 1))
+fi
+
 echo "[*] AC12: diagnostic printable-ASCII authority"
 diagnostic_ascii_output=$(python3 scripts/check_diagnostic_ascii_owner.py --root "$ROOT" 2>&1)
 diagnostic_ascii_status=$?
 if [ "$diagnostic_ascii_status" -ne 0 ]; then
     echo "[x] Agent diagnostic names must use utils/diagnostics.py::printable_ascii_text"
     echo "$diagnostic_ascii_output"
+    violations=$((violations + 1))
+fi
+doctor_status_output=$(python3 - <<'PY'
+import ast
+from pathlib import Path
+
+source = Path("src/apm_cli/commands/marketplace/__init__.py").read_text(encoding="utf-8")
+tree = ast.parse(source)
+function = next(
+    node
+    for node in tree.body
+    if isinstance(node, ast.FunctionDef) and node.name == "_doctor_status_icon"
+)
+raw_symbols = {"[!]", "[x]", "[i]", "[+]"}
+literal_symbols = {
+    node.value
+    for node in ast.walk(function)
+    if isinstance(node, ast.Constant) and isinstance(node.value, str)
+}
+uses_owner = any(
+    isinstance(node, ast.Name) and node.id == "STATUS_SYMBOLS"
+    for node in ast.walk(function)
+)
+if literal_symbols & raw_symbols or not uses_owner:
+    print("doctor status symbols must use utils/console.py::STATUS_SYMBOLS")
+    raise SystemExit(1)
+PY
+)
+doctor_status_status=$?
+if [ "$doctor_status_status" -ne 0 ]; then
+    echo "[x] Doctor status symbols must use utils/console.py::STATUS_SYMBOLS"
+    echo "$doctor_status_output"
     violations=$((violations + 1))
 fi
 
@@ -1331,6 +1438,23 @@ for consumer in $public_github_auth_consumers; do
 ${consumer}"
     fi
 done
+persistent_cache_auth_branch=$(
+    awk '
+        /^    def _persistent_cache_checkout\(/ { capture = 1 }
+        /^    def _setup_git_environment\(/ { capture = 0 }
+        capture { print }
+    ' src/apm_cli/deps/github_downloader.py
+)
+persistent_cache_auth_call_count=$(
+    grep -c 'self\._persistent_cache_checkout(' \
+        src/apm_cli/deps/github_downloader.py \
+        || true
+)
+persistent_cache_auth_bypasses=$(
+    grep -nE '(_persistent_cache|persistent_git_cache)\.get_checkout\(' \
+        src/apm_cli/deps/github_downloader.py \
+        || true
+)
 noninteractive_git_env_bypasses=$(
     grep -rEn --include='*.py' \
         'GitAuthEnvBuilder\.noninteractive_env\(' \
@@ -1342,8 +1466,15 @@ noninteractive_git_env_bypasses=$(
 )
 if ! grep -q '^    def uses_public_github_anonymous_first(' "$public_github_auth_owner" \
     || ! grep -q '^    def build_public_github_anonymous_git_env(' "$public_github_auth_owner" \
+    || ! grep -q '^    def build_public_github_authenticated_git_env(' "$public_github_auth_owner" \
     || ! grep -q '^    def build_noninteractive_git_env(' "$public_github_auth_owner" \
     || ! grep -q 'lazy_public_github' "$public_github_auth_owner" \
+    || ! printf '%s\n' "$persistent_cache_auth_branch" \
+        | grep -q 'self.auth_resolver.try_with_fallback(' \
+    || ! printf '%s\n' "$persistent_cache_auth_branch" \
+        | grep -q 'self.auth_resolver.build_public_github_authenticated_git_env(' \
+    || [ "$persistent_cache_auth_call_count" -lt 2 ] \
+    || [ -n "$persistent_cache_auth_bypasses" ] \
     || [ -n "$public_github_auth_duplicate_defs" ] \
     || [ -n "$public_github_auth_missing_consumers" ] \
     || [ -n "$noninteractive_git_env_bypasses" ]; then
@@ -1351,6 +1482,7 @@ if ! grep -q '^    def uses_public_github_anonymous_first(' "$public_github_auth
     [ -n "$public_github_auth_duplicate_defs" ] && echo "$public_github_auth_duplicate_defs"
     [ -n "$public_github_auth_missing_consumers" ] \
         && echo "Missing owner routing:${public_github_auth_missing_consumers}"
+    [ -n "$persistent_cache_auth_bypasses" ] && echo "$persistent_cache_auth_bypasses"
     [ -n "$noninteractive_git_env_bypasses" ] && echo "$noninteractive_git_env_bypasses"
     violations=$((violations + 1))
 fi
@@ -1769,6 +1901,50 @@ if ! grep -q 'structural_errors: tuple\[str, \.\.\.\] = ()' "$marketplace_struct
     violations=$((violations + 1))
 fi
 
+echo "[*] AC35: catalog-only marketplace materialization authority"
+catalog_materialization_owner="src/apm_cli/deps/_shared.py"
+catalog_materialization_consumer="src/apm_cli/deps/apm_resolver.py"
+catalog_local_consumer="src/apm_cli/install/phases/local_content.py"
+catalog_local_install_consumer="src/apm_cli/install/sources.py"
+plugin_root_placeholder_owner="src/apm_cli/deps/plugin_parser.py"
+plugin_root_placeholder_consumer="src/apm_cli/models/apm_package.py"
+catalog_manifest_parallel_hits=$(
+    grep -rEn --include='*.py' 'marketplace_manifest' src/apm_cli \
+        | grep -v "^${catalog_materialization_owner}:" \
+        | grep -v "^${catalog_materialization_consumer}:" \
+        | grep -v "^${catalog_local_consumer}:" \
+        | grep -v "^${catalog_local_install_consumer}:" \
+        | grep -v '^src/apm_cli/marketplace/models.py:' \
+        | grep -v '^src/apm_cli/models/dependency/reference.py:' \
+        || true
+)
+catalog_synthesis_parallel_hits=$(
+    grep -rEn --include='*.py' 'synthesize_apm_yml_from_plugin\(' src/apm_cli \
+        | grep -v "^${catalog_materialization_owner}:" \
+        | grep -v '^src/apm_cli/deps/plugin_parser.py:' \
+        || true
+)
+if ! grep -q '^def materialize_marketplace_manifest(' "$catalog_materialization_owner" \
+    || ! grep -q 'from \._shared import MarketplaceManifestMaterializationError, materialize_marketplace_manifest' \
+        "$catalog_materialization_consumer" \
+    || ! grep -q 'materialize_marketplace_manifest(dep_ref, install_path)' \
+        "$catalog_materialization_consumer" \
+    || ! grep -q 'has_marketplace_deployable_manifest(dep_ref)' \
+        "$catalog_local_consumer" \
+    || ! grep -q 'materialize_marketplace_manifest(dep_ref, install_path)' \
+        "$catalog_local_install_consumer" \
+    || ! grep -q '^def resolve_plugin_root_placeholders(' \
+        "$plugin_root_placeholder_owner" \
+    || ! grep -q 'resolve_plugin_root_placeholders(' \
+        "$plugin_root_placeholder_consumer" \
+    || [ -n "$catalog_manifest_parallel_hits" ] \
+    || [ -n "$catalog_synthesis_parallel_hits" ]; then
+    echo "[x] Catalog-only marketplace manifests must route through deps/_shared.py"
+    [ -n "$catalog_manifest_parallel_hits" ] && echo "$catalog_manifest_parallel_hits"
+    [ -n "$catalog_synthesis_parallel_hits" ] && echo "$catalog_synthesis_parallel_hits"
+    violations=$((violations + 1))
+fi
+
 echo "[*] AC29: dependency identity and materialization path authority"
 identity_owner="src/apm_cli/models/dependency/identity.py"
 materialization_owner="src/apm_cli/models/dependency/materialization.py"
@@ -1896,9 +2072,69 @@ if ! python3 scripts/check_hash_visible_lf_writes.py; then
     violations=$((violations + 1))
 fi
 
+echo "[*] AC35: native Copilot Agent Plugin registration authority"
+native_registration_owner_defs=$(grep -rEc \
+    '^def resolve_native_registration_capability\(' \
+    src/apm_cli --include='*.py' \
+    | awk -F: '{sum += $2} END {print sum + 0}')
+native_catalog_owner_defs=$(grep -rEc \
+    '^def synchronize_copilot_plugins\(' \
+    src/apm_cli --include='*.py' \
+    | awk -F: '{sum += $2} END {print sum + 0}')
+native_binary_coupling_hits=$(
+    grep -rnE \
+        'COPILOT_LIVE_PLUGIN_MIN_VERSION|probe_copilot_cli_version|APM_COPILOT_CLI_VERSION|find_runtime_binary|is_qualified_client_version|normalize_client_version|minimum_client_version|undetected_client_reason|unqualified_client_reason|AgentPluginClientUnavailableError|SemVer|parse_semver|subprocess\.(run|Popen|check_output|check_call)|shutil\.which' \
+        src/apm_cli/copilot_plugins \
+        src/apm_cli/install/phases/copilot_plugins.py \
+        src/apm_cli/install/template.py \
+        src/apm_cli/commands/prune.py \
+        src/apm_cli/commands/uninstall \
+        --include='*.py' \
+        || true
+)
+native_settings_key_hits=$(
+    grep -rn "extraKnownMarketplaces\|enabledPlugins" src/apm_cli --include='*.py' \
+        | grep -v 'src/apm_cli/copilot_plugins/' \
+        || true
+)
+if [ "$native_registration_owner_defs" -ne 1 ] \
+    || [ "$native_catalog_owner_defs" -ne 1 ] \
+    || ! grep -q 'from apm_cli.copilot_plugins.capability import current_native_registration' \
+        src/apm_cli/agent_plugins/errors.py \
+    || [ -n "$native_binary_coupling_hits" ] \
+    || [ -n "$native_settings_key_hits" ]; then
+    echo "[x] Native Copilot plugin registration must route through copilot_plugins/ with no binary/version coupling"
+    [ -n "$native_binary_coupling_hits" ] && echo "$native_binary_coupling_hits"
+    [ -n "$native_settings_key_hits" ] && echo "$native_settings_key_hits"
+    violations=$((violations + 1))
+fi
+
+echo "[*] AC36: frontmatter BOM decoding authority"
+frontmatter_owner="src/apm_cli/utils/yaml_io.py"
+frontmatter_bom_duplicate_hits=$(
+    grep -rEn --include='*.py' 'utf-8-sig' src/apm_cli \
+        | grep -v "^${frontmatter_owner}:" \
+        | grep -v 'architecture-authority-exempt:' \
+        || true
+)
+if ! grep -q 'def load_frontmatter(fd: Any, encoding: str = "utf-8-sig")' \
+        "$frontmatter_owner" \
+    || ! grep -Fq 'text.removeprefix("\ufeff")' "$frontmatter_owner" \
+    || [ -n "$frontmatter_bom_duplicate_hits" ]; then
+    echo "[x] Frontmatter BOM decoding must route through utils/yaml_io.py"
+    [ -n "$frontmatter_bom_duplicate_hits" ] && echo "$frontmatter_bom_duplicate_hits"
+    violations=$((violations + 1))
+fi
+
 echo "[*] AC18: bootstrap project-name authority"
 if ! uv run --extra dev python scripts/lint-bootstrap-project-name.py; then
     echo "[x] Manifest bootstrap names must route through core/project_name.py"
+    violations=$((violations + 1))
+fi
+
+echo "[*] AC36: resolution replacement activation authority"
+if ! uv run --extra dev python scripts/lint-resolution-replacement-boundary.py; then
+    echo "[x] Resolution replacements must stay staged until their canonical publish boundary"
     violations=$((violations + 1))
 fi
 

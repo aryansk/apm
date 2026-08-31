@@ -244,7 +244,9 @@ you can omit `start_marker` and `end_marker` if you use those verbatim.
 - The start marker must appear before the end marker; reversed order raises a loud error.
 - `start_marker` and `end_marker` must be distinct non-empty strings.
 - Content outside the markers is preserved verbatim across every compile
-  run; only the block between the markers is replaced.
+  run; only the block between the markers is replaced. When source attribution
+  emits a footer, it identifies this block as a generated section rather than
+  describing the whole file as generated.
 - In distributed compile mode, the same marker rules apply to every generated
   `AGENTS.md`. A placement in a nested Git repository (a `.git` directory or
   gitfile), including its descendants, is skipped with a warning.
