@@ -43,6 +43,11 @@ _KNOWN_DICT_KEYS = frozenset(
 # Security boundary for PR #1765 / issue #1670.
 _RESERVED_EXTRA_KEYS = _KNOWN_DICT_KEYS - {"extra"}
 
+# Harness aliases for modeled fields share the same passthrough boundary. Keeping
+# them beside the manifest vocabulary lets parsing report rejected keys truthfully
+# before every adapter consumes the filtered ``extra`` mapping.
+_EXTRA_DENYLIST = _RESERVED_EXTRA_KEYS | frozenset({"environment", "http_headers"})
+
 _NAME_REGEX = re.compile(r"^[a-zA-Z0-9@_][a-zA-Z0-9._@/:=-]{0,127}$")
 _ALLOWED_URL_SCHEMES = frozenset({"http", "https"})
 
@@ -102,31 +107,34 @@ class MCPDependency:
             raise ValueError("MCP dependency dict must contain 'name'")
 
         unknown = sorted(str(k) for k in d if k not in _KNOWN_DICT_KEYS)
+        reserved_unknown = [key for key in unknown if key in _EXTRA_DENYLIST]
+        passthrough_unknown = [key for key in unknown if key not in _EXTRA_DENYLIST]
         extra: dict[str, Any] | None = None
         # Merge unknown top-level keys with an explicit 'extra:' block
-        if unknown:
-            extra = {str(k): d[k] for k in d if str(k) in unknown}
+        if passthrough_unknown:
+            extra = {str(k): d[k] for k in d if str(k) in passthrough_unknown}
         explicit_extra = d.get("extra")
+        reserved_explicit: list[str] = []
         if isinstance(explicit_extra, dict):
             # Strip reserved modeled-field names from the explicit block so a
             # passthrough value cannot shadow/redirect a modeled field.
-            reserved = sorted(str(k) for k in explicit_extra if str(k) in _RESERVED_EXTRA_KEYS)
-            if reserved:
-                safe_name = ascii(str(d["name"]))[1:-1]
-                safe_reserved = ", ".join(ascii(k)[1:-1] for k in reserved)
-                _rich_warning(
-                    f"MCP dependency '{safe_name}': reserved key(s) ignored in 'extra' "
-                    f"(cannot override a modeled MCP field): {safe_reserved}",
-                    symbol="warning",
-                )
+            reserved_explicit = sorted(str(k) for k in explicit_extra if str(k) in _EXTRA_DENYLIST)
             safe_explicit = {
-                str(k): v for k, v in explicit_extra.items() if str(k) not in _RESERVED_EXTRA_KEYS
+                str(k): v for k, v in explicit_extra.items() if str(k) not in _EXTRA_DENYLIST
             }
             if safe_explicit:
                 extra = {**(extra or {}), **safe_explicit}
-        if unknown:
-            safe_name = ascii(str(d["name"]))[1:-1]
-            safe_keys = ", ".join(ascii(k)[1:-1] for k in unknown)
+        safe_name = ascii(str(d["name"]))[1:-1]
+        reserved = sorted(set(reserved_unknown) | set(reserved_explicit))
+        if reserved:
+            safe_reserved = ", ".join(ascii(k)[1:-1] for k in reserved)
+            _rich_warning(
+                f"MCP dependency '{safe_name}': reserved passthrough key(s) ignored "
+                f"(cannot override a modeled MCP field): {safe_reserved}",
+                symbol="warning",
+            )
+        if passthrough_unknown:
+            safe_keys = ", ".join(ascii(k)[1:-1] for k in passthrough_unknown)
             _rich_warning(
                 f"MCP dependency '{safe_name}': unknown key(s) preserved in extra: {safe_keys}",
                 symbol="warning",

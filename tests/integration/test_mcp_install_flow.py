@@ -282,6 +282,10 @@ def test_install_preserves_safe_opencode_passthrough_fields(tmp_path, monkeypatc
     result = CliRunner().invoke(cli, ["install", "--no-policy"])
 
     assert result.exit_code == 0, result.output
+    normalized_output = " ".join(result.output.split())
+    assert "reserved passthrough key(s) ignored" in normalized_output
+    assert "environment" in normalized_output
+    assert "unknown key(s) preserved in extra: myField, oauth" in normalized_output
     config = json.loads((tmp_path / "opencode.json").read_text(encoding="utf-8"))
     rendered = config["mcp"]["loopback-remote"]
     rendered_url = urlparse(rendered["url"])

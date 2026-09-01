@@ -59,6 +59,9 @@ _MCP_SCOPE_OWNER = "src/apm_cli/integration/mcp_config_view.py"
 _MCP_ADAPTER_BASE = "src/apm_cli/adapters/client/base.py"
 
 
+_MCP_MODEL = "src/apm_cli/models/dependency/mcp.py"
+
+
 _MCP_OPENCODE = "src/apm_cli/adapters/client/opencode.py"
 
 
@@ -476,7 +479,7 @@ def _check_mcp_passthrough_denylist(provider: FactsProvider) -> Iterable[Violati
     facts_by_path, failures = _read_required(
         provider,
         rule_id,
-        (_MCP_ADAPTER_BASE, _MCP_OPENCODE),
+        (_MCP_MODEL, _MCP_ADAPTER_BASE, _MCP_OPENCODE),
     )
     findings: list[Violation] = list(failures)
     if failures:
@@ -486,17 +489,31 @@ def _check_mcp_passthrough_denylist(provider: FactsProvider) -> Iterable[Violati
         _require(
             _has_fixed(
                 facts_by_path[_MCP_ADAPTER_BASE],
-                '_EXTRA_DENYLIST = _RESERVED_EXTRA_KEYS | frozenset({"environment", '
-                '"http_headers"})',
+                "from ...models.dependency.mcp import _EXTRA_DENYLIST, TrustedEnvLiteral",
             ),
             rule_id,
             _MCP_ADAPTER_BASE,
-            "base adapter denylist must own modeled fields and harness aliases",
+            "base adapter must import the canonical passthrough denylist",
         )
     )
     findings.extend(
         _require(
-            _has_fixed(facts_by_path[_MCP_OPENCODE], "from .base import _EXTRA_DENYLIST"),
+            _has_fixed(
+                facts_by_path[_MCP_MODEL],
+                '_EXTRA_DENYLIST = _RESERVED_EXTRA_KEYS | frozenset({"environment", '
+                '"http_headers"})',
+            ),
+            rule_id,
+            _MCP_MODEL,
+            "MCP model must own the modeled-field and harness-alias denylist",
+        )
+    )
+    findings.extend(
+        _require(
+            _has_fixed(
+                facts_by_path[_MCP_OPENCODE],
+                "from ...models.dependency.mcp import _EXTRA_DENYLIST",
+            ),
             rule_id,
             _MCP_OPENCODE,
             "OpenCode adapter must import the canonical passthrough denylist",

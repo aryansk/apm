@@ -30,7 +30,7 @@ import json
 import os
 from pathlib import Path
 
-from .base import _EXTRA_DENYLIST
+from ...models.dependency.mcp import _EXTRA_DENYLIST
 from .copilot import CopilotClientAdapter
 
 

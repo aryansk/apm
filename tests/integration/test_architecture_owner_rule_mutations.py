@@ -216,10 +216,10 @@ MUTATIONS: tuple[MutationCase, ...] = (
     MutationCase(
         guard_id="hooks-integrations-mcp-passthrough-denylist",
         rule_id="mutation_writes.mcp_passthrough_denylist",
-        path="src/apm_cli/adapters/client/base.py",
+        path="src/apm_cli/models/dependency/mcp.py",
         old='frozenset({"environment", "http_headers"})',
         new='frozenset({"http_headers"})',
-        intent="Shared adapter stops denying the OpenCode environment alias.",
+        intent="Shared MCP model stops denying the OpenCode environment alias.",
     ),
     MutationCase(
         guard_id="hooks-integrations-mcp-target-selection",
