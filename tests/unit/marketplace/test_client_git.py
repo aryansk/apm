@@ -198,7 +198,26 @@ def test_fetch_git_does_not_render_generic_exception_text(
 
     assert "helper-output-fixture-secret" not in str(raised.value)
     assert "git fetch failed" in str(raised.value)
-    assert "rerun the original marketplace command" in str(raised.value)
+    assert "apm marketplace update acme" in str(raised.value)
+
+
+def test_fetch_git_wraps_https_downgrade_rejection(fake_host_info, fake_auth_resolver) -> None:
+    """Transport-policy rejection keeps the actionable marketplace error shape."""
+    fake_auth_resolver.git_env_for_remote.side_effect = ValueError(
+        "HTTPS Git remote is configured to rewrite to insecure HTTP"
+    )
+
+    with pytest.raises(MarketplaceFetchError) as raised:
+        _fetch_git(
+            _git_source("https://gitea.example.com/org/repo.git"),
+            "marketplace.json",
+            host_info=fake_host_info,
+            auth_resolver=fake_auth_resolver,
+        )
+
+    message = str(raised.value)
+    assert "HTTPS Git remote was rejected" in message
+    assert "apm marketplace update acme" in message
 
 
 def test_fetchers_dispatch_table_routes_kinds_to_correct_callable() -> None:

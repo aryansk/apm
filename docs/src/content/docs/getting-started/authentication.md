@@ -65,7 +65,7 @@ before that fetch.
 | Remote | Credential posture |
 | --- | --- |
 | Generic HTTPS | Native Git credential helpers are available. |
-| Generic HTTP | Registration rejects plain HTTP. Any attempted Git fetch isolates configuration and suppresses credential helpers. |
+| Generic HTTP | Git fetches isolate configuration and suppress all credential channels. Hosted `marketplace.json` registration requires HTTPS. |
 | Generic SSH | Token-free, with `BatchMode=yes` and `ConnectTimeout=30`. |
 | GitHub, GitLab, ADO | Continue using the hardened provider-specific environment. |
 

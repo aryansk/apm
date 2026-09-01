@@ -224,3 +224,15 @@ def test_generic_remote_policy_controls_native_helper_lookup(
         lookup_env = token_manager.credential_envs[0]
         assert set(_PLATFORM_TOKENS).isdisjoint(lookup_env)
         assert lookup_env["GIT_TERMINAL_PROMPT"] == "0"
+
+
+def test_generic_plain_resolve_strips_platform_tokens_from_helper_lookup() -> None:
+    """Dependency-style resolution never forwards platform tokens to helpers."""
+    token_manager = _RecordingTokenManager()
+
+    AuthResolver(token_manager=token_manager).resolve("gitea.example.test")
+
+    assert len(token_manager.credential_envs) == 1
+    lookup_env = token_manager.credential_envs[0]
+    assert set(_PLATFORM_TOKENS).isdisjoint(lookup_env)
+    assert lookup_env["GIT_TERMINAL_PROMPT"] == "0"

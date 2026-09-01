@@ -574,12 +574,32 @@ def _fetch_git(
     from ..cache.paths import get_cache_root
 
     org = source.owner or None
-    auth_ctx = (
-        auth_resolver.resolve_for_remote(host_info.host, source.url, org, port=source.port)
-        if source.port is not None
-        else auth_resolver.resolve_for_remote(host_info.host, source.url, org)
-    )
-    git_env = auth_resolver.git_env_for_remote(auth_ctx, source.url)
+    try:
+        auth_ctx = (
+            auth_resolver.resolve_for_remote(host_info.host, source.url, org, port=source.port)
+            if source.port is not None
+            else auth_resolver.resolve_for_remote(host_info.host, source.url, org)
+        )
+        git_env = auth_resolver.git_env_for_remote(auth_ctx, source.url)
+    except ValueError as exc:
+        logger.debug(
+            "Generic-git policy rejected '%s': %s",
+            source.name,
+            type(exc).__name__,
+        )
+        reason = (
+            "HTTPS Git remote was rejected because Git configuration rewrites it to insecure HTTP"
+            if str(exc) == "HTTPS Git remote is configured to rewrite to insecure HTTP"
+            else "unable to verify HTTPS Git rewrite safety"
+        )
+        raise MarketplaceFetchError(
+            source.name,
+            reason,
+            retry_hint=(
+                "Remove the matching Git url.*.insteadOf rewrite, then run "
+                f"'apm marketplace update {source.name}' to retry."
+            ),
+        ) from exc
 
     cache = GitCache(get_cache_root(), refresh=False)
     try:
@@ -601,14 +621,18 @@ def _fetch_git(
         raise MarketplaceFetchError(
             source.name,
             "git fetch failed; verify the remote, configured Git credentials, or SSH key",
-            retry_hint="Correct Git access and rerun the original marketplace command.",
+            retry_hint=(
+                f"Correct Git access, then run 'apm marketplace update {source.name}' to retry."
+            ),
         ) from exc
     except Exception as exc:
         logger.debug("Generic-git fetch failed for '%s': %s", source.name, type(exc).__name__)
         raise MarketplaceFetchError(
             source.name,
             "git fetch failed; verify the remote, configured Git credentials, or SSH key",
-            retry_hint="Correct Git access and rerun the original marketplace command.",
+            retry_hint=(
+                f"Correct Git access, then run 'apm marketplace update {source.name}' to retry."
+            ),
         ) from exc
 
     target = Path(checkout_dir) / file_path

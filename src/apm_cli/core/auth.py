@@ -1216,30 +1216,15 @@ class AuthResolver:
             # github.com anonymous-first fallback supplies path= after a
             # private-repo-shaped failure so GCM can choose the correct
             # account without an unscoped prompt.
-            if path is None and host_info.kind == "generic":
-                credential = self._token_manager.resolve_credential_from_git(
-                    host_info.host,
-                    port=host_info.port,
-                    env=self._generic_credential_lookup_env(),
-                )
-            elif path is not None and host_info.kind == "generic":
-                credential = self._token_manager.resolve_credential_from_git(
-                    host_info.host,
-                    port=host_info.port,
-                    path=path,
-                    env=self._generic_credential_lookup_env(),
-                )
-            elif path is None:
-                credential = self._token_manager.resolve_credential_from_git(
-                    host_info.host,
-                    port=host_info.port,
-                )
-            else:
-                credential = self._token_manager.resolve_credential_from_git(
-                    host_info.host,
-                    port=host_info.port,
-                    path=path,
-                )
+            lookup_kwargs: dict[str, object] = {"port": host_info.port}
+            if path is not None:
+                lookup_kwargs["path"] = path
+            if host_info.kind == "generic":
+                lookup_kwargs["env"] = self._generic_credential_lookup_env()
+            credential = self._token_manager.resolve_credential_from_git(
+                host_info.host,
+                **lookup_kwargs,
+            )
             if credential:
                 return credential, "git-credential-fill", "basic"
 
@@ -1445,7 +1430,7 @@ class AuthResolver:
 
             if GitAuthEnvBuilder.has_https_to_http_url_rewrite(remote_url, env):
                 raise ValueError("HTTPS Git remote is configured to rewrite to insecure HTTP")
-        self._remove_platform_token_env(env)
+        self._clear_platform_token_env(env, remove=True)
         return env
 
     def _generic_credential_lookup_env(self) -> dict[str, str]:
@@ -1454,27 +1439,24 @@ class AuthResolver:
             base_env=self.hardened_git_base_env(),
             host_kind="generic",
         )
-        self._remove_platform_token_env(env)
+        self._clear_platform_token_env(env, remove=True)
         return env
 
     @staticmethod
-    def _clear_platform_token_env(env: dict) -> None:
-        """Neutralize raw platform token sources before spawning git.
+    def _clear_platform_token_env(env: dict, *, remove: bool = False) -> None:
+        """Scrub raw platform token sources before spawning git.
 
         GitPython treats ``env`` as an overlay on the parent process, so
         deleting a key from the overlay leaves the ambient value intact.
-        Empty values mask those sources in GitPython and direct subprocesses.
+        The default empty values mask those sources in GitPython and direct
+        subprocesses. Complete subprocess environments may remove them.
         """
         for key in tuple(env):
             if key in _GIT_CHILD_TOKEN_ENV_NAMES or key.startswith(_GIT_CHILD_TOKEN_ENV_PREFIXES):
-                env[key] = ""
-
-    @staticmethod
-    def _remove_platform_token_env(env: dict) -> None:
-        """Remove platform token variables from a complete subprocess env."""
-        for key in tuple(env):
-            if key in _GIT_CHILD_TOKEN_ENV_NAMES or key.startswith(_GIT_CHILD_TOKEN_ENV_PREFIXES):
-                env.pop(key, None)
+                if remove:
+                    env.pop(key, None)
+                else:
+                    env[key] = ""
 
     @staticmethod
     def _clear_git_auth_env(env: dict) -> None:

@@ -175,3 +175,53 @@ def test_generic_https_marketplace_add_uses_native_credential_helper(
     saved = json.loads((isolated.config_root / "marketplaces.json").read_text(encoding="utf-8"))
     assert len(saved["marketplaces"]) == 1
     assert saved["marketplaces"][0]["name"] == "generic-marketplace"
+
+
+def test_generic_https_marketplace_add_rejects_http_rewrite(
+    tmp_path: Path,
+    apm_binary_path: Path,
+) -> None:
+    """The installed CLI rejects an HTTPS-to-HTTP Git rewrite safely."""
+    isolated = IsolatedApmEnvironment.create(tmp_path / "scenario", base_env=os.environ)
+    real_git = _real_git()
+    subprocess.run(
+        (
+            str(real_git),
+            "config",
+            "--file",
+            str(isolated.home / ".gitconfig"),
+            "url.http://127.0.0.1:9/.insteadOf",
+            "https://gitea.example.test/",
+        ),
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    environment = isolated.subprocess_env()
+    environment.update(
+        {
+            "GITHUB_APM_PAT": "github-apm-sentinel",
+            "GIT_EXEC_PATH": _git_exec_path(real_git),
+        }
+    )
+
+    result = ApmLifecycleRunner((str(apm_binary_path),)).run(
+        (
+            "marketplace",
+            "add",
+            "https://gitea.example.test/org/repo.git",
+            "--name",
+            "downgrade-marketplace",
+        ),
+        scenario_id="marketplace-generic-https-downgrade",
+        cwd=isolated.work_root,
+        env=environment,
+    )
+
+    output = f"{result.stdout}\n{result.stderr}"
+    assert result.returncode == 1
+    assert "Failed to register marketplace" in output
+    assert "rewrite" in output
+    assert "insecure HTTP" in output
+    assert "apm marketplace update downgrade-marketplace" in output
+    assert "github-apm-sentinel" not in output
