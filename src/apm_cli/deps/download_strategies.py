@@ -131,7 +131,6 @@ class DownloadDelegate:
         *,
         stream: bool = False,
         retry_throttles: bool = True,
-        allow_redirects: bool = True,
     ) -> requests.Response:
         """HTTP GET with selectable retries for transient HTTP failures.
 
@@ -161,7 +160,6 @@ class DownloadDelegate:
                     headers=headers,
                     timeout=timeout,
                     stream=stream,
-                    allow_redirects=allow_redirects,
                 )
 
                 throttle = github_throttle_error(response, "GitHub API")
@@ -436,7 +434,6 @@ class DownloadDelegate:
                     headers=headers,
                     timeout=60,
                     stream=True,
-                    allow_redirects=False,
                 )
                 if resp.status_code == 200:
                     target_path.mkdir(parents=True, exist_ok=True)

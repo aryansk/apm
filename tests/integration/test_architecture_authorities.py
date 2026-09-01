@@ -86,6 +86,24 @@ def test_git_semver_preflight_eligibility_has_single_owner() -> None:
     assert "| Git semver preflight eligibility and resolution |" in architecture
 
 
+def test_artifactory_full_commit_sha_classification_has_single_owner() -> None:
+    """Artifactory URL and metadata decisions must share one SHA classifier."""
+    root = Path(__file__).parents[2]
+    owner = (root / "src/apm_cli/utils/github_host.py").read_text(encoding="utf-8")
+    consumer = (root / "src/apm_cli/deps/artifactory_orchestrator.py").read_text(encoding="utf-8")
+    guard = (root / "scripts/lint-architecture-boundaries.sh").read_text(encoding="utf-8")
+    architecture = (root / ".github/instructions/architecture.instructions.md").read_text(
+        encoding="utf-8"
+    )
+
+    assert owner.count("def is_full_commit_sha(") == 1
+    assert "\n    if is_full_commit_sha(ref):\n" in owner
+    assert "\n        if is_full_commit_sha(ref):\n" in consumer
+    assert "{40}" not in consumer
+    assert "Artifactory full commit SHA classification must route through" in guard
+    assert "| Full commit SHA classification for Artifactory replay |" in architecture
+
+
 @pytest.mark.parametrize(
     ("relative_path", "source", "expected"),
     [

@@ -285,16 +285,18 @@ class TestBuildArtifactoryArchiveUrl:
         assert any("/refs/heads/v1.0.0.zip" in u for u in urls)
         assert any("/-/archive/v1.0.0/repo-v1.0.0.zip" in u for u in urls)
 
-    def test_commit_sha_adds_generic_archive_fallback(self):
-        """Resolved commits include the immutable GitHub commit archive URL."""
+    def test_commit_sha_uses_only_commit_addressed_candidates(self):
+        """Resolved commits cannot be shadowed by mutable branch or tag names."""
         sha = "a" * 40
         urls = build_artifactory_archive_url(
             "art.example.com", "artifactory/github", "owner", "repo", ref=sha
         )
 
-        assert urls[-1].endswith(f"/owner/repo/archive/{sha}.zip")
-        assert any(f"/refs/heads/{sha}.zip" in u for u in urls)
-        assert any(f"/refs/tags/{sha}.zip" in u for u in urls)
+        assert [urlparse(url).path for url in urls] == [
+            f"/artifactory/github/owner/repo/archive/{sha}.zip",
+            f"/artifactory/github/owner/repo/-/archive/{sha}/repo-{sha}.zip",
+            f"/artifactory/github/owner/repo/zip/{sha}",
+        ]
 
     def test_short_hex_ref_does_not_add_commit_archive_fallback(self):
         urls = build_artifactory_archive_url(
@@ -302,6 +304,16 @@ class TestBuildArtifactoryArchiveUrl:
         )
 
         assert not any(u.endswith("/archive/abc123.zip") for u in urls)
+
+    @pytest.mark.parametrize("ref", ("a" * 39, "a" * 41, "g" * 40))
+    def test_non_full_sha_shapes_keep_mutable_ref_candidates(self, ref: str):
+        urls = build_artifactory_archive_url(
+            "art.example.com", "artifactory/github", "owner", "repo", ref=ref
+        )
+
+        assert urlparse(urls[0]).path == (
+            f"/artifactory/github/owner/repo/archive/refs/heads/{ref}.zip"
+        )
 
     def test_real_artifactory_host(self):
         """Build URLs matching real Artifactory pattern."""
@@ -1387,7 +1399,7 @@ class TestFrozenArtifactoryCommitReplay:
     """Regression coverage for immutable Artifactory archive replay."""
 
     def test_frozen_replay_reaches_generic_commit_archive_via_proxy(self, tmp_path: Path) -> None:
-        """A locked tag replays its SHA through only the final proxy candidate."""
+        """A locked tag replays its SHA through the immutable proxy candidate."""
         commit = "a" * 40
         owner = "testorg"
         repo = "testrepo"
@@ -1455,7 +1467,7 @@ class TestFrozenArtifactoryCommitReplay:
 
         def proxy_get(url: str, headers: dict[str, str], **kwargs: object) -> MagicMock:
             request_calls.append((url, headers, kwargs))
-            if url == expected_urls[-1]:
+            if url == expected_urls[0]:
                 return _archive_response(200, archive_bytes)
             return _archive_response(404)
 
@@ -1472,8 +1484,8 @@ class TestFrozenArtifactoryCommitReplay:
             proxy_info=(host_name, prefix, "https"),
         )
 
-        assert [url for url, _, _ in request_calls] == list(expected_urls)
-        assert urlparse(request_calls[-1][0]).path == (
+        assert [url for url, _, _ in request_calls] == [expected_urls[0]]
+        assert urlparse(request_calls[0][0]).path == (
             f"/{prefix}/{owner}/{repo}/archive/{commit}.zip"
         )
         assert {urlparse(url).hostname for url, _, _ in request_calls} == {host_name}
@@ -1481,7 +1493,7 @@ class TestFrozenArtifactoryCommitReplay:
             headers == {"Authorization": "Bearer proxy-test-token"}
             for _, headers, _ in request_calls
         )
-        assert all(kwargs["allow_redirects"] is False for _, _, kwargs in request_calls)
+        assert all("allow_redirects" not in kwargs for _, _, kwargs in request_calls)
         assert all(kwargs["stream"] is True for _, _, kwargs in request_calls)
         assert result.resolved_reference.ref_type == GitReferenceType.COMMIT
         assert result.resolved_reference.resolved_commit == commit

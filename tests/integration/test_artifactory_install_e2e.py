@@ -118,12 +118,22 @@ class _ArchiveHTTPServer(HTTPServer):
     """HTTP server carrying the archive bytes served by ``_ZipHandler``."""
 
     archive_bytes: bytes
+    redirect_url: str | None
+    request_headers: list[dict[str, str]]
+    request_paths: list[str]
 
 
 class _ZipHandler(BaseHTTPRequestHandler):
     """Serve the pre-built ZIP for any GET request path."""
 
     def do_GET(self) -> None:
+        self.server.request_headers.append(dict(self.headers))
+        self.server.request_paths.append(urlparse(self.path).path)
+        if self.server.redirect_url is not None:
+            self.send_response(302)
+            self.send_header("Location", self.server.redirect_url)
+            self.end_headers()
+            return
         archive_bytes = self.server.archive_bytes
         self.send_response(200)
         self.send_header("Content-Type", "application/zip")
@@ -139,9 +149,17 @@ class _ZipHandler(BaseHTTPRequestHandler):
 class _LocalZipServer:
     """Thin wrapper: start / stop an in-process HTTPServer on 127.0.0.1:0."""
 
-    def __init__(self, archive_bytes: bytes = _ZIP_BYTES) -> None:
+    def __init__(
+        self,
+        archive_bytes: bytes = _ZIP_BYTES,
+        *,
+        redirect_url: str | None = None,
+    ) -> None:
         self._server = _ArchiveHTTPServer(("127.0.0.1", 0), _ZipHandler)
         self._server.archive_bytes = archive_bytes
+        self._server.redirect_url = redirect_url
+        self._server.request_headers = []
+        self._server.request_paths = []
         self._thread = threading.Thread(target=self._server.serve_forever, daemon=True)
 
     @property
@@ -152,6 +170,14 @@ class _LocalZipServer:
     @property
     def port(self) -> int:
         return self._server.server_address[1]
+
+    @property
+    def request_headers(self) -> list[dict[str, str]]:
+        return self._server.request_headers
+
+    @property
+    def request_paths(self) -> list[str]:
+        return self._server.request_paths
 
     def start(self) -> None:
         self._thread.start()
@@ -247,9 +273,14 @@ class _LocalArchiveDownloader:
             safe_extract_zip(zf, target_path, error_type=ArchiveError)
 
 
-def _real_archive_downloader() -> DownloadDelegate:
+def _real_archive_downloader(authorization: str | None = None) -> DownloadDelegate:
     """Build the production downloader with enough host surface for local HTTP."""
-    host = SimpleNamespace(registry_config=None, artifactory_token=None)
+    registry_config = (
+        SimpleNamespace(get_headers=lambda: {"Authorization": authorization})
+        if authorization is not None
+        else None
+    )
+    host = SimpleNamespace(registry_config=registry_config, artifactory_token=None)
     delegate = DownloadDelegate(host)
     host._resilient_get = delegate.resilient_get
     return delegate
@@ -396,3 +427,60 @@ class TestArtifactoryInstallE2E:
             assert not (target_path / "escape.txt").exists()
         finally:
             zip_server.stop()
+
+    def test_redirected_archive_succeeds_without_cross_host_auth(self, tmp_path: Path) -> None:
+        """Production transport follows redirects without forwarding credentials."""
+        archive_server = _LocalZipServer()
+        archive_server.start()
+        redirect_server = _LocalZipServer(
+            redirect_url=f"http://{archive_server.host}/redirected.zip"
+        )
+        redirect_server.start()
+        try:
+            downloader = _real_archive_downloader("Bearer test-token")
+            orchestrator = ArtifactoryOrchestrator(archive_downloader=downloader)
+            dep_ref = DependencyReference(
+                repo_url=f"{_OWNER}/{_REPO}",
+                host="github.com",
+                reference=_REF,
+            )
+
+            result = orchestrator.download_package(
+                dep_ref,
+                tmp_path / "redirected",
+                proxy_info=(redirect_server.host, _PROXY_PREFIX, "http"),
+            )
+
+            assert result.package_type == PackageType.APM_PACKAGE
+            assert redirect_server.request_headers[0].get("Authorization") == "Bearer test-token"
+            assert archive_server.request_headers[0].get("Authorization") is None
+        finally:
+            redirect_server.stop()
+            archive_server.stop()
+
+    def test_full_sha_replay_uses_production_commit_archive(self, tmp_path: Path) -> None:
+        """Frozen SHAs use the immutable archive route through production transport."""
+        commit = "a" * 40
+        archive_server = _LocalZipServer()
+        archive_server.start()
+        try:
+            downloader = _real_archive_downloader()
+            orchestrator = ArtifactoryOrchestrator(archive_downloader=downloader)
+            dep_ref = DependencyReference(
+                repo_url=f"{_OWNER}/{_REPO}",
+                host="github.com",
+                reference=commit,
+            )
+
+            result = orchestrator.download_package(
+                dep_ref,
+                tmp_path / "frozen",
+                proxy_info=(archive_server.host, _PROXY_PREFIX, "http"),
+            )
+
+            assert archive_server.request_paths == [
+                f"/{_PROXY_PREFIX}/{_OWNER}/{_REPO}/archive/{commit}.zip"
+            ]
+            assert result.resolved_reference.resolved_commit == commit
+        finally:
+            archive_server.stop()

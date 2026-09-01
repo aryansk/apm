@@ -30,7 +30,6 @@ reuse benefit.
 
 from __future__ import annotations
 
-import re
 import tempfile
 from datetime import datetime
 from pathlib import Path
@@ -42,7 +41,7 @@ from ..models.apm_package import (
     ResolvedReference,
     validate_apm_package,
 )
-from ..utils.github_host import default_host, is_github_hostname
+from ..utils.github_host import default_host, is_full_commit_sha, is_github_hostname
 
 if TYPE_CHECKING:
     from ..models.apm_package import DependencyReference
@@ -194,7 +193,7 @@ class ArtifactoryOrchestrator:
     @staticmethod
     def _resolved_commit_metadata(ref: str) -> tuple[GitReferenceType, str | None]:
         """Classify an archive ref for lockfile-safe resolution metadata."""
-        if re.fullmatch(r"[0-9a-fA-F]{40}", ref):
+        if is_full_commit_sha(ref):
             return GitReferenceType.COMMIT, ref
         return GitReferenceType.BRANCH, None
 

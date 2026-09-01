@@ -196,13 +196,6 @@ class TestResilientGet:
         assert result is resp
         assert mock_get.call_args.kwargs["stream"] is True
 
-    def test_passes_redirect_policy_to_requests(self) -> None:
-        resp = _fake_response(200, b"ok")
-        with patch("requests.get", return_value=resp) as mock_get:
-            result = self.delegate.resilient_get("https://example.com", {}, allow_redirects=False)
-        assert result is resp
-        assert mock_get.call_args.kwargs["allow_redirects"] is False
-
     def test_429_returns_immediately_without_sleep(self) -> None:
         """A confirmed throttle is returned for the typed caller decision."""
         rate_resp = _fake_response(429, b"slow", headers={"Retry-After": "0.01"})
@@ -577,7 +570,7 @@ class TestDownloadArtifactoryArchive:
             )
         assert (tmp_path / "apm.yml").read_bytes() == b"name: test"
         assert host._resilient_get.call_args.kwargs["stream"] is True
-        assert host._resilient_get.call_args.kwargs["allow_redirects"] is False
+        assert "allow_redirects" not in host._resilient_get.call_args.kwargs
 
     def test_http_non_200_tries_next_url(self, tmp_path: Path) -> None:
         zip_bytes = _make_zip({"apm.yml": b"name: test"})

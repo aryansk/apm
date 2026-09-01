@@ -1719,6 +1719,20 @@ if ! uv run --extra dev python scripts/lint-bootstrap-project-name.py; then
     violations=$((violations + 1))
 fi
 
+echo "[*] AC35: Artifactory full commit SHA classification authority"
+artifactory_sha_owner="src/apm_cli/utils/github_host.py"
+artifactory_sha_consumer="src/apm_cli/deps/artifactory_orchestrator.py"
+if [ "$(grep -Fc 'def is_full_commit_sha(' "$artifactory_sha_owner")" -ne 1 ] \
+    || ! grep -q '^    if is_full_commit_sha(ref):$' "$artifactory_sha_owner" \
+    || ! grep -q 'from ..utils.github_host import .*is_full_commit_sha' \
+        "$artifactory_sha_consumer" \
+    || ! grep -q '^        if is_full_commit_sha(ref):$' "$artifactory_sha_consumer" \
+    || grep -Fq '{40}' "$artifactory_sha_consumer" \
+    || grep -Fq 'fullmatch(' "$artifactory_sha_consumer"; then
+    echo "[x] Artifactory full commit SHA classification must route through utils/github_host.py"
+    violations=$((violations + 1))
+fi
+
 if [ "$violations" -gt 0 ]; then
     echo "[x] $violations architecture boundary rule(s) failed"
     exit 1
