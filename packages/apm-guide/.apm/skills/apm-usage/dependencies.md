@@ -473,8 +473,8 @@ dependencies:
     # Self-defined remote with harness-specific extra keys
     # Unknown keys (e.g. oauth) are passthrough: preserved and written into
     # the generated config for EVERY installed harness. Keys that collide with
-    # a modeled field or target alias (command/url/env/environment/http_headers/...)
-    # are rejected with a warning.
+    # a modeled or adapter-owned field
+    # (command/url/env/enabled/environment/http_headers/id/...) are rejected.
     - name: slack
       registry: false
       transport: http

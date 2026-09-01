@@ -500,12 +500,23 @@ def _check_mcp_passthrough_denylist(provider: FactsProvider) -> Iterable[Violati
         _require(
             _has_fixed(
                 facts_by_path[_MCP_MODEL],
-                '_EXTRA_DENYLIST = _RESERVED_EXTRA_KEYS | frozenset({"environment", '
-                '"http_headers"})',
+                '_HARNESS_EXTRA_ALIASES = frozenset({"enabled", "environment", '
+                '"http_headers", "id"})',
             ),
             rule_id,
             _MCP_MODEL,
-            "MCP model must own the modeled-field and harness-alias denylist",
+            "MCP model must own the harness-alias denylist",
+        )
+    )
+    findings.extend(
+        _require(
+            _has_fixed(
+                facts_by_path[_MCP_MODEL],
+                "_EXTRA_DENYLIST = _RESERVED_EXTRA_KEYS | _HARNESS_EXTRA_ALIASES",
+            ),
+            rule_id,
+            _MCP_MODEL,
+            "MCP model must combine modeled fields and harness aliases",
         )
     )
     findings.extend(
@@ -523,7 +534,7 @@ def _check_mcp_passthrough_denylist(provider: FactsProvider) -> Iterable[Violati
         _require(
             _has_fixed(
                 facts_by_path[_MCP_OPENCODE],
-                'translated_keys = _EXTRA_DENYLIST | {"enabled", "id"}',
+                "translated_keys = _EXTRA_DENYLIST",
             ),
             rule_id,
             _MCP_OPENCODE,

@@ -273,7 +273,9 @@ def test_install_preserves_safe_opencode_passthrough_fields(tmp_path, monkeypatc
         {
             "oauth": {"clientId": "client", "callbackPort": 3118},
             "myField": "somevalue",
+            "enabled": False,
             "environment": {"NODE_OPTIONS": "--require ./payload.js"},
+            "id": "manifest-supplied-id",
         }
     )
     (tmp_path / "apm.yml").write_text(yaml.safe_dump(manifest), encoding="utf-8")
@@ -284,7 +286,7 @@ def test_install_preserves_safe_opencode_passthrough_fields(tmp_path, monkeypatc
     assert result.exit_code == 0, result.output
     normalized_output = " ".join(result.output.split())
     assert "reserved passthrough key(s) ignored" in normalized_output
-    assert "environment" in normalized_output
+    assert "enabled, environment, id" in normalized_output
     assert "unknown key(s) preserved in extra: myField, oauth" in normalized_output
     config = json.loads((tmp_path / "opencode.json").read_text(encoding="utf-8"))
     rendered = config["mcp"]["loopback-remote"]
@@ -296,7 +298,9 @@ def test_install_preserves_safe_opencode_passthrough_fields(tmp_path, monkeypatc
     )
     assert rendered["oauth"] == {"clientId": "client", "callbackPort": 3118}
     assert rendered["myField"] == "somevalue"
+    assert rendered["enabled"] is True
     assert "environment" not in rendered
+    assert "id" not in rendered
 
 
 def test_install_rejects_nonloopback_http_without_ownership_claim(tmp_path, monkeypatch) -> None:

@@ -154,7 +154,7 @@ class OpenCodeClientAdapter(CopilotClientAdapter):
         if env:
             entry["environment"] = dict(env)
 
-        translated_keys = _EXTRA_DENYLIST | {"enabled", "id"}
+        translated_keys = _EXTRA_DENYLIST
         for key, value in copilot_entry.items():
             if key not in translated_keys and key not in entry:
                 entry[key] = value
