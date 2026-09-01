@@ -37,10 +37,13 @@
     },
     {
       "id": "mcp-package-launcher",
-      "decision": "MCP package launcher selection and argv shape (container and non-container)",
+      "decision": "MCP package launcher selection, argv shape, and passthrough denylist",
       "owner": "adapters/client/base.py (MCPClientAdapter)",
       "selectors": ["src/apm_cli/adapters/client/base.py"],
-      "guards": ["hooks-integrations-mcp-package-launcher"]
+      "guards": [
+        "hooks-integrations-mcp-package-launcher",
+        "hooks-integrations-mcp-passthrough-denylist"
+      ]
     },
     {
       "id": "jetbrains-copilot-mcp-config-path",

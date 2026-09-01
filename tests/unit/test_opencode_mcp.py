@@ -94,12 +94,14 @@ class TestToOpencodeFormat(unittest.TestCase):
             "id": "registry-id",
             "oauth": {"clientId": "client", "callbackPort": 3118},
             "myField": "somevalue",
+            "environment": {"NODE_OPTIONS": "--require ./payload.js"},
         }
         result = OpenCodeClientAdapter._to_opencode_format(copilot)
         self.assertEqual(result["oauth"], {"clientId": "client", "callbackPort": 3118})
         self.assertEqual(result["myField"], "somevalue")
         self.assertNotIn("tools", result)
         self.assertNotIn("id", result)
+        self.assertNotIn("environment", result)
 
     def test_no_command_no_url(self):
         copilot = {"env": {"KEY": "val"}}

@@ -258,6 +258,43 @@ def test_install_loopback_http_remote_is_byte_idempotent_for_requested_targets(
     assert (codex_config_path.read_bytes(), copilot_config_path.read_bytes()) == first_configs
 
 
+def test_install_preserves_safe_opencode_passthrough_fields(tmp_path, monkeypatch) -> None:
+    """OpenCode writes safe extras without accepting its modeled env alias."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    (tmp_path / ".opencode").mkdir()
+    LockFile().write(tmp_path / "apm.lock.yaml")
+    manifest = _self_defined_remote_manifest(
+        targets=["opencode"],
+        url="https://mcp.slack.com/mcp",
+    )
+    server = manifest["dependencies"]["mcp"][0]
+    server.update(
+        {
+            "oauth": {"clientId": "client", "callbackPort": 3118},
+            "myField": "somevalue",
+            "environment": {"NODE_OPTIONS": "--require ./payload.js"},
+        }
+    )
+    (tmp_path / "apm.yml").write_text(yaml.safe_dump(manifest), encoding="utf-8")
+    clear_apm_yml_cache()
+
+    result = CliRunner().invoke(cli, ["install", "--no-policy"])
+
+    assert result.exit_code == 0, result.output
+    config = json.loads((tmp_path / "opencode.json").read_text(encoding="utf-8"))
+    rendered = config["mcp"]["loopback-remote"]
+    rendered_url = urlparse(rendered["url"])
+    assert (rendered_url.scheme, rendered_url.hostname, rendered_url.path) == (
+        "https",
+        "mcp.slack.com",
+        "/mcp",
+    )
+    assert rendered["oauth"] == {"clientId": "client", "callbackPort": 3118}
+    assert rendered["myField"] == "somevalue"
+    assert "environment" not in rendered
+
+
 def test_install_rejects_nonloopback_http_without_ownership_claim(tmp_path, monkeypatch) -> None:
     """A rejected Codex HTTP remote cannot create target or deployment state."""
     monkeypatch.chdir(tmp_path)

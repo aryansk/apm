@@ -185,7 +185,7 @@ def _docker_image_repository(reference: str) -> str:
 # not be injectable via passthrough. Enforced unconditionally per adapter path
 # (NOT guarded by "key absent from config"), so it also closes paths that do not
 # pre-set the key. Security boundary for PR #1765 / issue #1670.
-_EXTRA_DENYLIST = _RESERVED_EXTRA_KEYS | frozenset({"http_headers"})
+_EXTRA_DENYLIST = _RESERVED_EXTRA_KEYS | frozenset({"environment", "http_headers"})
 
 
 @dataclass(frozen=True)
