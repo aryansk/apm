@@ -191,6 +191,7 @@ class LocalGitHttpServerFactory:
             if certfile is None or keyfile is None:
                 raise ValueError("TLS requires both certfile and keyfile")
             context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+            context.minimum_version = ssl.TLSVersion.TLSv1_2
             context.load_cert_chain(certfile=certfile, keyfile=keyfile)
             server.socket = context.wrap_socket(server.socket, server_side=True)
             scheme = "https"
