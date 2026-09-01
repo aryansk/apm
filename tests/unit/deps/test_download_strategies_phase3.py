@@ -570,6 +570,7 @@ class TestDownloadArtifactoryArchive:
             )
         assert (tmp_path / "apm.yml").read_bytes() == b"name: test"
         assert host._resilient_get.call_args.kwargs["stream"] is True
+        assert host._resilient_get.call_args.kwargs["allow_netrc"] is False
         assert "allow_redirects" not in host._resilient_get.call_args.kwargs
 
     def test_http_non_200_tries_next_url(self, tmp_path: Path) -> None:

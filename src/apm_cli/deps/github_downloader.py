@@ -603,6 +603,7 @@ class GitHubPackageDownloader:
         *,
         stream: bool = False,
         retry_throttles: bool = True,
+        allow_netrc: bool = True,
     ) -> requests.Response:
         """Backward-compat stub -- delegates to download strategies."""
         return self._strategies.resilient_get(
@@ -612,6 +613,7 @@ class GitHubPackageDownloader:
             max_retries=max_retries,
             stream=stream,
             retry_throttles=retry_throttles,
+            allow_netrc=allow_netrc,
         )
 
     def _sanitize_git_error(self, error_message: str) -> str:

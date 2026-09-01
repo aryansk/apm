@@ -36,6 +36,7 @@ from urllib.parse import urlparse
 
 import pytest
 
+from apm_cli.deps.artifactory_entry import fetch_entry_from_archive
 from apm_cli.deps.artifactory_orchestrator import ArtifactoryOrchestrator
 from apm_cli.deps.download_strategies import DownloadDelegate
 from apm_cli.models.apm_package import DependencyReference, PackageInfo, PackageType
@@ -428,8 +429,19 @@ class TestArtifactoryInstallE2E:
         finally:
             zip_server.stop()
 
-    def test_redirected_archive_succeeds_without_cross_host_auth(self, tmp_path: Path) -> None:
-        """Production transport follows redirects without forwarding credentials."""
+    def test_redirected_archive_succeeds_without_cross_host_auth(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Redirects neither forward explicit auth nor acquire ambient netrc auth."""
+        netrc_path = tmp_path / "netrc"
+        netrc_path.write_text(
+            "machine 127.0.0.1 login ambient-user password ambient-password\n",
+            encoding="ascii",
+        )
+        netrc_path.chmod(0o600)
+        monkeypatch.setenv("NETRC", str(netrc_path))
         archive_server = _LocalZipServer()
         archive_server.start()
         redirect_server = _LocalZipServer(
@@ -483,4 +495,42 @@ class TestArtifactoryInstallE2E:
             ]
             assert result.resolved_reference.resolved_commit == commit
         finally:
+            archive_server.stop()
+
+    def test_redirected_entry_download_does_not_acquire_netrc_auth(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Direct entry downloads suppress ambient netrc credentials."""
+        netrc_path = tmp_path / "netrc"
+        netrc_path.write_text(
+            "machine 127.0.0.1 login ambient-user password ambient-password\n",
+            encoding="ascii",
+        )
+        netrc_path.chmod(0o600)
+        monkeypatch.setenv("NETRC", str(netrc_path))
+        archive_server = _LocalZipServer()
+        archive_server.start()
+        redirect_server = _LocalZipServer(
+            redirect_url=f"http://{archive_server.host}/redirected-entry"
+        )
+        redirect_server.start()
+        try:
+            content = fetch_entry_from_archive(
+                host=redirect_server.host,
+                prefix=_PROXY_PREFIX,
+                owner=_OWNER,
+                repo=_REPO,
+                file_path="apm.yml",
+                ref=_REF,
+                scheme="http",
+                headers={"Authorization": "******"},
+            )
+
+            assert content == _ZIP_BYTES
+            assert redirect_server.request_headers[0].get("Authorization") == "******"
+            assert archive_server.request_headers[0].get("Authorization") is None
+        finally:
+            redirect_server.stop()
             archive_server.stop()

@@ -691,6 +691,7 @@ registry_delegation.root_cli_output_mode
 registry_delegation.runtime_descriptors
 registry_delegation.target_vocabulary
 transport-platform-artifactory-full-commit-sha
+transport-platform-artifactory-netrc-isolation
 transport-platform-git-cache-identity
 transport-platform-git-semver-preflight
 transport-platform-github-throttle

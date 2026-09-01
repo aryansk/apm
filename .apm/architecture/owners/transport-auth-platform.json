@@ -87,6 +87,13 @@
       "owner": "utils/github_host.py (is_full_commit_sha)",
       "selectors": ["src/apm_cli/utils/github_host.py"],
       "guards": ["transport-platform-artifactory-full-commit-sha"]
+    },
+    {
+      "id": "artifactory-netrc-isolation",
+      "decision": "Artifactory HTTP requests exclude ambient netrc credentials",
+      "owner": "deps/artifactory_entry.py (_NoNetrcSession)",
+      "selectors": ["src/apm_cli/deps/artifactory_entry.py"],
+      "guards": ["transport-platform-artifactory-netrc-isolation"]
     }
   ]
 }
