@@ -618,7 +618,6 @@ class GitHubPackageDownloader:
 
     def _sanitize_git_error(self, error_message: str) -> str:
         """Sanitize Git error messages to remove potentially sensitive authentication information.
-
         Args:
             error_message: Raw error message from Git operations
 
