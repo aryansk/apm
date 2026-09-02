@@ -102,7 +102,8 @@ class MCPDependency:
         """Parse an MCPDependency from a dict.
 
         Handles backward compatibility: 'type' key is mapped to 'transport'.
-        Unknown keys are dropped with a warning naming each discarded key.
+        Safe unknown keys are preserved in ``extra``; modeled fields and harness
+        aliases are rejected with a warning.
         """
         if "name" not in d:
             raise ValueError("MCP dependency dict must contain 'name'")
