@@ -506,9 +506,9 @@ def check_dependency_identity(provider: FactsProvider) -> tuple[Violation, ...]:
     embedded_subpath_message = (
         "Embedded git URL subpath validation must use DependencyReference and host_providers"
     )
-    if not _body_has(
-        embedded_subpath_body, "classify_host_provider("
-    ) or not _body_has(embedded_subpath_body, 'provider.kind == "gitlab"'):
+    if not _body_has(embedded_subpath_body, "classify_host_provider(") or not _body_has(
+        embedded_subpath_body, 'provider.kind == "gitlab"'
+    ):
         findings.append(
             _summary(
                 rule_id,
