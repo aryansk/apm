@@ -34,7 +34,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Generic marketplace Git now prevents platform tokens from reaching native
   credential-helper subprocesses while preserving HTTPS helper access; HTTP and
   HTTPS-to-HTTP rewrites suppress credentials, and SSH is token-free and
-  noninteractive. - by @aryansk (#2594)
+  noninteractive. (by @aryansk, #2594)
 - Windows binary is now Authenticode-signed in the release workflow, eliminating
   the `Trojan:Script/Wacatac.H!ml` Windows Defender false positive on unsigned
   PyInstaller bundles. (#2435)
