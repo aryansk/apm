@@ -1875,15 +1875,14 @@ class HookIntegrator(BaseIntegrator):
         Uses *managed_files* (relative paths) to surgically remove only
         APM-tracked files; falls back to legacy ``*-apm.json`` glob when
         *managed_files* is ``None``. **Never** calls ``shutil.rmtree``.
-        Also cleans APM entries from merged-hook JSON files via the
-        ``_apm_source`` marker.
+        Also cleans ``_apm_source`` entries from merged-hook JSON files.
         ``targets`` (#2250) scopes only the merged-hook JSON cleanup below.
         The ``managed_files`` guard remains the union of ``KNOWN_TARGETS``
         and ``targets`` so files from a since-dropped target are not stranded.
         """
         from .targets import KNOWN_TARGETS
 
-        stats: dict[str, int] = {"files_removed": 0, "errors": 0}
+        stats: dict[str, Any] = {"files_removed": 0, "errors": 0}
         guard_targets = list(KNOWN_TARGETS.values())
         if targets is not None:
             guard_targets = guard_targets + list(targets)
@@ -1909,6 +1908,8 @@ class HookIntegrator(BaseIntegrator):
                     resolved_project_root=resolved_project_root,
                     allow_final_symlink=True,
                 ):
+                    stats["errors"] += 1
+                    stats.setdefault("unsafe_paths", []).append(normalized)
                     continue
                 target_file = project_root / rel_path
                 if target_file.is_symlink() or (target_file.exists() and target_file.is_file()):

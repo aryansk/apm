@@ -1286,6 +1286,14 @@ def _sync_integrations_after_uninstall(
         targets=_resolved_targets,
     )
     counts["hooks"] = result.get("files_removed", 0)
+    unsafe_hook_paths = result.get("unsafe_paths", [])
+    if unsafe_hook_paths:
+        logger.warning(
+            f"Skipped {len(unsafe_hook_paths)} managed hook path(s) that failed "
+            "containment validation. Remove them manually after review."
+        )
+        for unsafe_path in unsafe_hook_paths:
+            logger.verbose_detail(f"Skipped unsafe managed hook path: {unsafe_path}")
 
     # Phase 2: Re-integrate from remaining installed packages.
     #

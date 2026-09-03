@@ -24,7 +24,12 @@ def discover_primitives(*args: Any, **kwargs: Any) -> Any:
     return _discover_primitives(*args, **kwargs)
 
 
-def _managed_absolute_target_root(candidate: Path, targets: Any) -> Path | None:
+def _managed_absolute_target_root(
+    candidate: Path,
+    targets: Any,
+    *,
+    allow_final_symlink: bool = False,
+) -> Path | None:
     """Return the managed root for *candidate*, or ``None`` if unmanaged."""
     from apm_cli.integration.targets import KNOWN_TARGETS
 
@@ -38,7 +43,7 @@ def _managed_absolute_target_root(candidate: Path, targets: Any) -> Path | None:
             if scoped is not None:
                 source.append(scoped)
     try:
-        resolved = candidate.resolve()
+        resolved = (candidate.parent if allow_final_symlink else candidate).resolve()
         for target_profile in source:
             if target_profile is None:
                 continue
@@ -54,7 +59,7 @@ def _managed_absolute_target_root(candidate: Path, targets: Any) -> Path | None:
                     contained = ensure_path_within(resolved, primitive_root)
                 except PathTraversalError:
                     continue
-                if contained != primitive_root:
+                if allow_final_symlink or contained != primitive_root:
                     return resolved_root
             if target_profile.hooks_config_display:
                 hooks_file = resolved_root / Path(target_profile.hooks_config_display).name
@@ -529,7 +534,14 @@ class BaseIntegrator:
 
         candidate = Path(rel_path)
         if candidate.is_absolute():
-            return _managed_absolute_target_root(candidate, targets) is not None
+            return (
+                _managed_absolute_target_root(
+                    candidate,
+                    targets,
+                    allow_final_symlink=allow_final_symlink,
+                )
+                is not None
+            )
 
         if allowed_prefixes is None:
             allowed_prefixes = BaseIntegrator._get_integration_prefixes(

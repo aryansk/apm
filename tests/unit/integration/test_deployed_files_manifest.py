@@ -749,6 +749,8 @@ class TestHookSync:
         )
 
         assert stats["files_removed"] == 0
+        assert stats["errors"] == 1
+        assert stats["unsafe_paths"] == [".copilot/hooks/pkg-hooks.json"]
         assert outside_file.read_text(encoding="utf-8") == '{"outside": true}'
 
     @pytest.mark.parametrize("target_exists", [True, False])
@@ -775,6 +777,46 @@ class TestHookSync:
             None,
             project_root,
             managed_files={".copilot/hooks/pkg-hooks.json"},
+            targets=[target],
+        )
+
+        assert stats["files_removed"] == 1
+        assert not managed_link.is_symlink()
+        if target_exists:
+            assert outside_file.read_text(encoding="utf-8") == '{"outside": true}'
+
+    @pytest.mark.parametrize("target_exists", [True, False])
+    def test_sync_unlinks_absolute_final_managed_symlink_without_following_target(
+        self,
+        tmp_path: Path,
+        target_exists: bool,
+    ):
+        """Absolute managed roots use the same final-symlink safety."""
+        from dataclasses import replace
+
+        project_root = tmp_path / "project"
+        project_root.mkdir()
+        target_root = tmp_path / "claude-root"
+        hooks_dir = target_root / "hooks"
+        hooks_dir.mkdir(parents=True)
+        outside_file = tmp_path / "outside-hook.json"
+        if target_exists:
+            outside_file.write_text('{"outside": true}', encoding="utf-8")
+        managed_link = hooks_dir / "pkg-hooks.json"
+        try:
+            managed_link.symlink_to(outside_file)
+        except (NotImplementedError, OSError) as exc:
+            pytest.skip(f"symlink creation unavailable: {exc}")
+
+        target = replace(
+            KNOWN_TARGETS["claude"],
+            root_dir=str(target_root),
+            resolved_deploy_root=target_root,
+        )
+        stats = HookIntegrator().sync_integration(
+            None,
+            project_root,
+            managed_files={str(managed_link)},
             targets=[target],
         )
 
