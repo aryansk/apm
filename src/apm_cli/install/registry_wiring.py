@@ -29,7 +29,7 @@ def get_effective_default_registry(data: dict, *, create_config: bool = True) ->
     try:
         from ..deps.registry.feature_gate import is_package_registry_enabled
 
-        if not is_package_registry_enabled():
+        if not is_package_registry_enabled(create_config=create_config):
             return None
     except Exception:
         return None

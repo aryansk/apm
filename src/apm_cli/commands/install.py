@@ -688,6 +688,7 @@ def _validate_and_add_packages_to_apm_yml(
             package_path=apm_yml_path.parent,
             source_path=apm_yml_path.parent,
             manifest_path=apm_yml_path,
+            create_config=create_config,
         )
 
     outcome = _ValidationOutcome(
@@ -796,7 +797,7 @@ def _report_bootstrap_manifest(
     user_scope: bool,
 ) -> None:
     """Render bootstrap messages with dry-run-safe wording."""
-    if dry_run:
+    if dry_run and user_scope:
         logger.progress(f"Dry run: Would create {manifest_display}")
     else:
         logger.success(f"Created {manifest_display}")
@@ -1811,7 +1812,10 @@ def _install_apm_packages(ctx, outcome):
     )
 
     try:
-        apm_package = APMPackage.from_apm_yml(ctx.manifest_path)
+        apm_package = APMPackage.from_apm_yml(
+            ctx.manifest_path,
+            create_config=ctx.create_config,
+        )
         if ctx.dry_run and outcome is not None and outcome.prospective_package is not None:
             apm_package = outcome.prospective_package
     except click.UsageError:

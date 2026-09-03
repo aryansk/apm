@@ -7,6 +7,8 @@ from click.testing import CliRunner
 from apm_cli.cli import cli
 from apm_cli.commands.install import _prepare_dry_run_manifest_path
 from apm_cli.core.command_logger import _ValidationOutcome
+from apm_cli.install.registry_wiring import get_effective_default_registry
+from apm_cli.models.apm_package import APMPackage
 
 
 def test_global_dry_run_command_leaves_absent_home_state_uncreated(tmp_path: Path) -> None:
@@ -88,3 +90,46 @@ def test_existing_user_manifest_is_read_in_place(tmp_path: Path) -> None:
 
     assert preview_manifest == user_manifest
     assert temp_dir is None
+
+
+def test_registry_default_read_does_not_create_missing_user_config(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    config_dir = tmp_path / "home" / ".apm"
+    config_file = config_dir / "config.json"
+
+    monkeypatch.setattr("apm_cli.config.CONFIG_DIR", str(config_dir))
+    monkeypatch.setattr("apm_cli.config.CONFIG_FILE", str(config_file))
+    monkeypatch.setattr("apm_cli.config._config_cache", None)
+
+    default_registry = get_effective_default_registry({}, create_config=False)
+
+    assert default_registry is None
+    assert not config_dir.exists()
+
+
+def test_apm_package_preview_parse_does_not_create_missing_user_config(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    config_dir = tmp_path / "home" / ".apm"
+    config_file = config_dir / "config.json"
+
+    monkeypatch.setattr("apm_cli.config.CONFIG_DIR", str(config_dir))
+    monkeypatch.setattr("apm_cli.config.CONFIG_FILE", str(config_file))
+    monkeypatch.setattr("apm_cli.config._config_cache", None)
+
+    APMPackage.from_mapping(
+        {
+            "name": "preview",
+            "version": "1.0.0",
+            "dependencies": {"apm": ["example/pkg"]},
+        },
+        package_path=tmp_path,
+        source_path=tmp_path,
+        manifest_path=tmp_path / "apm.yml",
+        create_config=False,
+    )
+
+    assert not config_dir.exists()
