@@ -1068,7 +1068,7 @@ def _sync_integrations_after_uninstall(
     lockfile: LockFile | None = None,
     modules_dir: Path | None = None,
     survivor_plan: list[tuple[DependencyReference, object]] | None = None,
-) -> tuple[dict[str, int], dict[str, list[str]]]:
+) -> tuple[dict[str, int], dict[str, list[str]], list[str]]:
     """Remove deployed files and re-integrate from remaining packages.
 
     When *user_scope* is ``True``, targets are resolved for user-level
@@ -1294,7 +1294,17 @@ def _sync_integrations_after_uninstall(
             "removing anything."
         )
         for unsafe_path in unsafe_hook_paths:
-            logger.warning(f"Preserved managed hook path: {unsafe_path}")
+            path = Path(unsafe_path)
+            if not path.is_absolute():
+                path = project_root / path
+            if user_scope:
+                try:
+                    display_path = f"~/{path.relative_to(project_root).as_posix()}"
+                except ValueError:
+                    display_path = path.as_posix()
+            else:
+                display_path = path.as_posix()
+            logger.warning(f"Preserved managed hook path: {display_path}")
 
     # Phase 2: Re-integrate from remaining installed packages.
     #
@@ -1347,7 +1357,7 @@ def _sync_integrations_after_uninstall(
             )
 
     reintegration_diagnostics.render_summary()
-    return counts, package_deployed_files
+    return counts, package_deployed_files, unsafe_hook_paths
 
 
 def _remove_stale_mcp_from_recorded_targets(

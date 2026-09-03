@@ -427,17 +427,20 @@ def uninstall(ctx, packages, dry_run, verbose, global_):
             "instructions": 0,
         }
         surviving_deployed_files = {}
+        unsafe_hook_paths: list[str] = []
         lockfile_ready = True
         try:
             apm_package = APMPackage.from_apm_yml(manifest_path)
-            cleaned, surviving_deployed_files = _sync_integrations_after_uninstall(
-                apm_package,
-                deploy_root,
-                all_deployed_files,
-                logger,
-                user_scope=scope is InstallScope.USER,
-                lockfile=lockfile,
-                modules_dir=modules_dir,
+            cleaned, surviving_deployed_files, unsafe_hook_paths = (
+                _sync_integrations_after_uninstall(
+                    apm_package,
+                    deploy_root,
+                    all_deployed_files,
+                    logger,
+                    user_scope=scope is InstallScope.USER,
+                    lockfile=lockfile,
+                    modules_dir=modules_dir,
+                )
             )
         except Exception as _sync_err:
             # Surface why integration cleanup failed instead of swallowing
@@ -565,8 +568,14 @@ def uninstall(ctx, packages, dry_run, verbose, global_):
         summary_lines = [f"Removed {len(packages_to_remove)} package(s) from apm.yml"]
         if removed_from_modules > 0:
             summary_lines.append(f"Removed {removed_from_modules} package(s) from apm_modules/")
-        if mcp_cleanup_error is None and lsp_cleanup_error is None:
+        if (
+            mcp_cleanup_error is None
+            and lsp_cleanup_error is None
+            and not unsafe_hook_paths
+        ):
             logger.success("Uninstall complete: " + ", ".join(summary_lines))
+        elif unsafe_hook_paths:
+            logger.warning("Package removal finished, but managed hook cleanup is incomplete.")
 
         # Fire post-uninstall lifecycle scripts
         _fire_uninstall_scripts(
@@ -578,7 +587,7 @@ def uninstall(ctx, packages, dry_run, verbose, global_):
             verbose=verbose,
             deploy_root=deploy_root,
         )
-        if mcp_cleanup_error is not None or lsp_cleanup_error is not None:
+        if mcp_cleanup_error is not None or lsp_cleanup_error is not None or unsafe_hook_paths:
             sys.exit(1)
 
     except Exception as e:
