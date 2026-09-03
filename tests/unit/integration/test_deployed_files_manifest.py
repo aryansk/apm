@@ -751,6 +751,38 @@ class TestHookSync:
         assert stats["files_removed"] == 0
         assert outside_file.read_text(encoding="utf-8") == '{"outside": true}'
 
+    @pytest.mark.parametrize("target_exists", [True, False])
+    def test_sync_unlinks_final_managed_symlink_without_following_target(
+        self,
+        tmp_path: Path,
+        target_exists: bool,
+    ):
+        """Managed cleanup removes a final symlink, not its referent."""
+        project_root = tmp_path / "project"
+        hooks_dir = project_root / ".copilot" / "hooks"
+        hooks_dir.mkdir(parents=True)
+        outside_file = tmp_path / "outside-hook.json"
+        if target_exists:
+            outside_file.write_text('{"outside": true}', encoding="utf-8")
+        managed_link = hooks_dir / "pkg-hooks.json"
+        try:
+            managed_link.symlink_to(outside_file)
+        except (NotImplementedError, OSError) as exc:
+            pytest.skip(f"symlink creation unavailable: {exc}")
+
+        target = KNOWN_TARGETS["copilot"].for_scope(user_scope=True)
+        stats = HookIntegrator().sync_integration(
+            None,
+            project_root,
+            managed_files={".copilot/hooks/pkg-hooks.json"},
+            targets=[target],
+        )
+
+        assert stats["files_removed"] == 1
+        assert not managed_link.is_symlink()
+        if target_exists:
+            assert outside_file.read_text(encoding="utf-8") == '{"outside": true}'
+
 
 # ---------------------------------------------------------------------------
 # 10. Skill integrator — directory-level behavior + sync

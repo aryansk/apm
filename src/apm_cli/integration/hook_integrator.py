@@ -1911,7 +1911,7 @@ class HookIntegrator(BaseIntegrator):
                 ):
                     continue
                 target_file = project_root / rel_path
-                if target_file.exists() and target_file.is_file():
+                if target_file.is_symlink() or (target_file.exists() and target_file.is_file()):
                     try:
                         target_file.unlink()
                         stats["files_removed"] += 1
