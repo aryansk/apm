@@ -1098,7 +1098,7 @@ def filter_lsp_by_allow_executables(
 
 
 def read_bundle_allow_executables(apm_yml_path: Path, logger: Any) -> dict | None:
-    """Read allowExecutables from apm.yml for bundle install. Fail-closed on error."""
+    """Read executable trust settings from apm.yml for bundle install."""
     try:
         from ..utils.yaml_io import load_yaml  # local import avoids circular at module init
 
@@ -1106,11 +1106,13 @@ def read_bundle_allow_executables(apm_yml_path: Path, logger: Any) -> dict | Non
             return None
         data = load_yaml(apm_yml_path)
         if isinstance(data, dict):
-            return parse_allow_executables(data)
+            if data.get("allowExecutables") is not None:
+                warn_allow_executables_alias_once(logger)
+            return build_effective_exec_map(policy=None, project_data=data)
         return None
     except Exception as exc:
         logger.warning(
-            f"Could not read allowExecutables from apm.yml: {exc}. "
+            f"Could not read executable trust settings from apm.yml: {exc}. "
             "Treating as fully enforced with no approvals.",
             symbol="warning",
         )
