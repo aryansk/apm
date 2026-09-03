@@ -16,6 +16,8 @@ from apm_cli.utils.path_security import (
     ensure_path_within,
     has_symlink_component,
 )
+
+
 def discover_primitives(*args: Any, **kwargs: Any) -> Any:
     from apm_cli.primitives.discovery import discover_primitives as _discover_primitives
 

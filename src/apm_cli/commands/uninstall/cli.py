@@ -40,11 +40,7 @@ def _report_uninstall_outcome(
 ) -> bool:
     """Render the final summary and return whether cleanup was incomplete."""
     integration_incomplete = not integration_cleanup.complete
-    if (
-        not mcp_cleanup_fatal
-        and lsp_cleanup_error is None
-        and not integration_incomplete
-    ):
+    if not mcp_cleanup_fatal and lsp_cleanup_error is None and not integration_incomplete:
         if integration_cleanup_error is None:
             logger.success("Uninstall complete: " + ", ".join(summary_lines))
         else:
