@@ -637,6 +637,42 @@ class TestInstallLocalBundleDryRun:
         assert not config_file.exists()
         assert not config_dir.exists()
 
+    def test_root_redirect_reads_allow_executables_from_source_manifest(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """--root redirects writes, but executable consent stays source-owned."""
+        bundle = _make_plugin_bundle(tmp_path / "src")
+        project = _make_project(tmp_path / "source")
+        deploy_root = tmp_path / "deploy"
+        deploy_root.mkdir()
+        captured: dict[str, Path] = {}
+
+        def fake_read_allow(apm_yml_path: Path, _logger: object) -> dict | None:
+            captured["allow_manifest"] = apm_yml_path
+            return {}
+
+        def fake_install_local_bundle(**_kwargs: object) -> None:
+            return None
+
+        with (
+            patch("apm_cli.security.executables.read_bundle_allow_executables", fake_read_allow),
+            patch(
+                "apm_cli.install.local_bundle_handler.install_local_bundle",
+                fake_install_local_bundle,
+            ),
+        ):
+            result = _invoke_install(
+                project,
+                str(bundle),
+                "--root",
+                str(deploy_root),
+                "--dry-run",
+                monkeypatch=monkeypatch,
+            )
+
+        assert result.exit_code == 0, f"stdout={result.output!r}\nstderr={result.stderr!r}"
+        assert captured["allow_manifest"] == project / "apm.yml"
+
 
 @pytest.mark.lifecycle_smoke
 @pytest.mark.parametrize("archive", (False, True), ids=("directory", "archive"))
