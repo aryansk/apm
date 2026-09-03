@@ -58,6 +58,26 @@ def _report_uninstall_outcome(
     )
 
 
+def _collect_deployed_cleanup_state(
+    lockfile,
+    dependency_keys: set[str],
+) -> tuple[set[str], dict[str, str]]:
+    """Snapshot selected deployment paths and hashes before lockfile mutation."""
+    from ...integration.base_integrator import BaseIntegrator
+
+    deployed_files: set[str] = set()
+    deployed_hashes: dict[str, str] = {}
+    for record in lockfile.deployment_ledger.records.values():
+        if record.content_hash and dependency_keys.intersection(record.owners):
+            deployed_hashes.setdefault(record.locator.value, record.content_hash)
+    for dep_key, dependency in lockfile.dependencies.items():
+        if dep_key not in dependency_keys:
+            continue
+        deployed_files.update(dependency.deployed_files)
+        deployed_hashes.update(dependency.deployed_file_hashes)
+    return BaseIntegrator.normalize_managed_files(deployed_files) or set(), deployed_hashes
+
+
 def _prepare_dependency_sections(data: dict) -> tuple[bool, list, list, list]:
     """Ensure dependency sections exist and return their mutable list views."""
     if "dependencies" not in data:
@@ -417,17 +437,14 @@ def uninstall(ctx, packages, dry_run, verbose, global_):
         removed_from_modules += orphan_removed
 
         # Step 8: Collect deployed files for removed packages (before lockfile mutation)
-        from ...integration.base_integrator import BaseIntegrator
-
         removed_keys.update(actual_orphans)
-        all_deployed_files = builtins.set()
         if lockfile:
-            for dep_key, dep in lockfile.dependencies.items():
-                if dep_key in removed_keys or dep_key in refreshed_survivor_keys:
-                    all_deployed_files.update(dep.deployed_files)
-        all_deployed_files = (
-            BaseIntegrator.normalize_managed_files(all_deployed_files) or builtins.set()
-        )
+            all_deployed_files, all_deployed_file_hashes = _collect_deployed_cleanup_state(
+                lockfile,
+                removed_keys | refreshed_survivor_keys,
+            )
+        else:
+            all_deployed_files, all_deployed_file_hashes = set(), {}
 
         # Step 9: Mutate dependency state in memory. Persistence happens once
         # after survivor ownership, hashes, ledger, and MCP state agree.
@@ -475,6 +492,7 @@ def uninstall(ctx, packages, dry_run, verbose, global_):
                 user_scope=scope is InstallScope.USER,
                 lockfile=lockfile,
                 modules_dir=modules_dir,
+                deployed_file_hashes=all_deployed_file_hashes,
             )
             cleaned = integration_cleanup.counts
             surviving_deployed_files = integration_cleanup.deployed_files

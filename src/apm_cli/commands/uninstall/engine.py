@@ -1083,6 +1083,7 @@ def _sync_integrations_after_uninstall(
     lockfile: LockFile | None = None,
     modules_dir: Path | None = None,
     survivor_plan: list[tuple[DependencyReference, object]] | None = None,
+    deployed_file_hashes: dict[str, str] | None = None,
 ) -> "IntegrationCleanupOutcome":
     """Remove deployed files and re-integrate from remaining packages.
 
@@ -1298,6 +1299,7 @@ def _sync_integrations_after_uninstall(
         apm_package,
         project_root,
         managed_files=_buckets["hooks"] if _buckets else None,
+        managed_file_hashes=deployed_file_hashes,
         targets=_resolved_targets,
     )
     counts["hooks"] = result.get("files_removed", 0)

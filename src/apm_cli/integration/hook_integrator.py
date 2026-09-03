@@ -1868,6 +1868,7 @@ class HookIntegrator(BaseIntegrator):
         apm_package,
         project_root: Path,
         managed_files: set = None,  # noqa: RUF013
+        managed_file_hashes: dict[str, str] | None = None,
         targets=None,
     ) -> dict:
         """Remove APM-managed hook files.
@@ -1893,12 +1894,19 @@ class HookIntegrator(BaseIntegrator):
         ]
         hook_prefix_tuple = tuple(dict.fromkeys(hook_prefixes))
         if managed_files is not None:
-            # Manifest-based removal -- only remove tracked files
-            deleted: list = []
+            from apm_cli.integration.cleanup import remove_stale_deployed_files
+            from apm_cli.utils.diagnostics import DiagnosticCollector
+
+            cleanup_paths: set[str] = set()
+            final_symlinks: list[tuple[str, Path]] = []
             resolved_project_root = project_root.resolve()
             for rel_path in managed_files:
                 normalized = rel_path.replace("\\", "/")
                 if not normalized.startswith(hook_prefix_tuple):
+                    continue
+                target_file = project_root / rel_path
+                if not target_file.is_symlink():
+                    cleanup_paths.add(normalized)
                     continue
                 if not self.validate_deploy_path(
                     normalized,
@@ -1912,17 +1920,32 @@ class HookIntegrator(BaseIntegrator):
                     stats.setdefault("unsafe_paths", []).append(normalized)
                     stats.setdefault("failed_paths", []).append(normalized)
                     continue
-                target_file = project_root / rel_path
-                if target_file.is_symlink() or (target_file.exists() and target_file.is_file()):
-                    try:
-                        target_file.unlink()
-                        stats["files_removed"] += 1
-                        deleted.append(target_file)
-                    except Exception:
-                        stats["errors"] += 1
-                        stats.setdefault("failed_paths", []).append(normalized)
-            # Batch parent cleanup -- single bottom-up pass
-            self.cleanup_empty_parents(deleted, stop_at=project_root)
+                final_symlinks.append((normalized, target_file))
+
+            cleanup = remove_stale_deployed_files(
+                cleanup_paths,
+                project_root,
+                dep_key="<uninstall hooks>",
+                targets=guard_targets,
+                diagnostics=DiagnosticCollector(),
+                recorded_hashes=managed_file_hashes,
+            )
+            stats["files_removed"] += len(cleanup.deleted)
+            retained = cleanup.retained
+            if retained:
+                stats["errors"] += len(retained)
+                stats.setdefault("failed_paths", []).extend(retained)
+            stats.setdefault("unsafe_paths", []).extend(cleanup.skipped_unmanaged)
+
+            for normalized, target_file in final_symlinks:
+                try:
+                    target_file.unlink()
+                    stats["files_removed"] += 1
+                    cleanup.deleted_targets.append(target_file)
+                except Exception:
+                    stats["errors"] += 1
+                    stats.setdefault("failed_paths", []).append(normalized)
+            self.cleanup_empty_parents(cleanup.deleted_targets, stop_at=project_root)
         else:
             # Legacy fallback  -- glob for old -apm suffix files
             hooks_dir = project_root / ".github" / "hooks"

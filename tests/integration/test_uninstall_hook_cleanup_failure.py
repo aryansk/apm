@@ -3,7 +3,7 @@
 from pathlib import Path
 
 import pytest
-from click.testing import CliRunner
+from click.testing import CliRunner, Result
 
 from apm_cli.commands.uninstall.cli import uninstall
 from apm_cli.core.deployment_state import (
@@ -19,11 +19,8 @@ from apm_cli.utils.yaml_io import dump_yaml
 pytestmark = pytest.mark.component
 
 
-def test_uninstall_reports_real_managed_hook_unlink_failure(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """A HookIntegrator unlink failure reaches the CLI as a nonzero outcome."""
+def _prepare_hook_install(tmp_path: Path) -> tuple[str, Path]:
+    """Create one lock-backed Copilot hook installation."""
     package = "owner/installed"
     hook_path = ".github/hooks/installed-hooks.json"
     hook_file = tmp_path / hook_path
@@ -58,6 +55,24 @@ def test_uninstall_reports_real_managed_hook_unlink_failure(
         deployment_ledger=DeploymentLedger(records={locator.key: record}),
         _deployments_present=True,
     ).write(tmp_path / "apm.lock.yaml")
+    return package, hook_file
+
+
+def _assert_incomplete_cleanup(result: Result, hook_file: Path) -> None:
+    """Assert the user-visible incomplete-cleanup contract."""
+    assert result.exit_code == 1
+    assert hook_file.exists()
+    assert "Preserved managed hook path" in result.output
+    assert "managed hook cleanup is incomplete" in result.output
+    assert "Uninstall complete" not in result.output
+
+
+def test_uninstall_reports_real_managed_hook_unlink_failure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A HookIntegrator unlink failure reaches the CLI as a nonzero outcome."""
+    package, hook_file = _prepare_hook_install(tmp_path)
     original_unlink = Path.unlink
     failure_active = False
 
@@ -82,8 +97,29 @@ def test_uninstall_reports_real_managed_hook_unlink_failure(
 
     result = CliRunner().invoke(uninstall, [package])
 
-    assert result.exit_code == 1
-    assert hook_file.exists()
-    assert "Preserved managed hook path" in result.output
-    assert "managed hook cleanup is incomplete" in result.output
-    assert "Uninstall complete" not in result.output
+    _assert_incomplete_cleanup(result, hook_file)
+
+
+def test_uninstall_preserves_hook_replaced_after_provenance_preflight(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A user replacement racing cleanup fails the final provenance gate."""
+    package, hook_file = _prepare_hook_install(tmp_path)
+    user_content = '{"user": "replacement"}\n'
+
+    def replace_hook_after_preflight(*_args, **_kwargs) -> int:
+        hook_file.parent.mkdir(parents=True, exist_ok=True)
+        hook_file.write_text(user_content, encoding="ascii")
+        return 0
+
+    monkeypatch.setattr(
+        "apm_cli.commands.uninstall.cli._remove_packages_from_disk",
+        replace_hook_after_preflight,
+    )
+    monkeypatch.chdir(tmp_path)
+
+    result = CliRunner().invoke(uninstall, [package])
+
+    _assert_incomplete_cleanup(result, hook_file)
+    assert hook_file.read_text(encoding="ascii") == user_content
