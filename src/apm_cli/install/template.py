@@ -166,6 +166,7 @@ def preflight_agent_plugin_dry_run(
             source_root,
             user_scope=is_user_scope(ctx.scope),
             explicit_target=explicit_target,
+            create_config=ctx.create_config,
         )
     except Exception:
         targets = getattr(ctx, "targets", None)

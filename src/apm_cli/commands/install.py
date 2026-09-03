@@ -778,16 +778,6 @@ def _prepare_user_scope_for_install(
         logger.warning(scope_warning)
 
 
-def _cleanup_dry_run_user_config(apm_dir: Path) -> None:
-    """Remove the default config file if dry-run preview code created it."""
-    config_file = apm_dir / "config.json"
-    with contextlib.suppress(OSError, UnicodeDecodeError):
-        if config_file.read_text(encoding="utf-8") == '{"default_client": "vscode"}':
-            config_file.unlink()
-    with contextlib.suppress(OSError):
-        apm_dir.rmdir()
-
-
 def _report_bootstrap_manifest(
     *,
     logger: InstallLogger,
@@ -1291,7 +1281,6 @@ def install(  # noqa: PLR0913
     command_result: InstallResult | None = None
     transaction: InstallTransaction | None = None
     dry_run_manifest_tmp = None
-    dry_run_user_apm_dir = None
     from ..install.service import InstallService
 
     try:
@@ -1536,8 +1525,6 @@ def install(  # noqa: PLR0913
         # Scope-aware paths
         manifest_path = get_manifest_path(scope)
         apm_dir = get_apm_dir(scope)
-        if dry_run and scope is InstallScope.USER and not apm_dir.exists():
-            dry_run_user_apm_dir = apm_dir
         # Display name for messages (short for project scope, full for user scope)
         manifest_display = str(manifest_path) if scope is InstallScope.USER else APM_YML_FILENAME
         manifest_path, dry_run_manifest_tmp = _prepare_dry_run_manifest_path(
@@ -1766,8 +1753,6 @@ def install(  # noqa: PLR0913
         close_install_contexts(_root_redirect, transaction)
         if dry_run_manifest_tmp is not None:
             dry_run_manifest_tmp.cleanup()
-        if dry_run_user_apm_dir is not None:
-            _cleanup_dry_run_user_config(dry_run_user_apm_dir)
         # F5 (#1116): render minimal elapsed-time line on exit paths that
         # did not already render the full install summary. Best-effort:
         # never let a render failure mask the original exception/exit.
