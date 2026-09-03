@@ -1134,7 +1134,8 @@ class LockFile:
             return False
         if (
             self.mcp_target_servers != other.mcp_target_servers
-            or self._mcp_target_servers_present != other._mcp_target_servers_present
+            or (bool(self.mcp_target_servers) or self._mcp_target_servers_present)
+            != (bool(other.mcp_target_servers) or other._mcp_target_servers_present)
             or dict(self.deployment_ledger.records) != dict(other.deployment_ledger.records)
         ):
             return False
