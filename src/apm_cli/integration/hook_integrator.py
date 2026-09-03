@@ -1878,8 +1878,6 @@ class HookIntegrator(BaseIntegrator):
         *managed_files* is ``None``. **Never** calls ``shutil.rmtree``.
         Also cleans ``_apm_source`` entries from merged-hook JSON files.
         ``targets`` (#2250) scopes only the merged-hook JSON cleanup below.
-        The ``managed_files`` guard remains the union of ``KNOWN_TARGETS``
-        and ``targets`` so files from a since-dropped target are not stranded.
         """
         from .targets import KNOWN_TARGETS
 
@@ -1899,8 +1897,7 @@ class HookIntegrator(BaseIntegrator):
 
             cleanup_paths: set[str] = set()
             for rel_path in managed_files:
-                normalized = rel_path.replace("\\", "/")
-                if not normalized.startswith(hook_prefix_tuple):
+                if not (normalized := rel_path.replace("\\", "/")).startswith(hook_prefix_tuple):
                     continue
                 cleanup_paths.add(normalized)
 
@@ -1924,7 +1921,6 @@ class HookIntegrator(BaseIntegrator):
             stats.setdefault("unsafe_paths", []).extend(cleanup.skipped_unmanaged)
             self.cleanup_empty_parents(cleanup.deleted_targets, stop_at=project_root)
         else:
-            # Legacy fallback  -- glob for old -apm suffix files
             hooks_dir = project_root / ".github" / "hooks"
             if hooks_dir.exists():
                 for hook_file in hooks_dir.glob("*-apm.json"):

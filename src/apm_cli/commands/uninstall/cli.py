@@ -36,11 +36,12 @@ def _report_uninstall_outcome(
     integration_cleanup_error: Exception | None,
     mcp_cleanup_error: Exception | None,
     lsp_cleanup_error: Exception | None,
+    mcp_cleanup_fatal: bool,
 ) -> bool:
     """Render the final summary and return whether cleanup was incomplete."""
     integration_incomplete = not integration_cleanup.complete
     if (
-        mcp_cleanup_error is None
+        not mcp_cleanup_fatal
         and lsp_cleanup_error is None
         and not integration_incomplete
     ):
@@ -51,7 +52,7 @@ def _report_uninstall_outcome(
     elif integration_incomplete:
         logger.warning("Package removal finished, but managed hook cleanup is incomplete.")
     return (
-        mcp_cleanup_error is not None
+        mcp_cleanup_fatal
         or lsp_cleanup_error is not None
         or integration_incomplete
         or integration_cleanup_error is not None
@@ -68,6 +69,57 @@ def _collect_deployed_cleanup_state(
 
     snapshot = DeploymentLedgerCodec.cleanup_snapshot(lockfile, dependency_keys)
     return BaseIntegrator.normalize_managed_files(snapshot.paths) or set(), snapshot.hashes
+
+
+def _sync_integrations_for_manifest(
+    *,
+    manifest_path,
+    deploy_root,
+    all_deployed_files,
+    logger,
+    user_scope: bool,
+    lockfile,
+    modules_dir,
+    deployed_file_hashes,
+    default_counts,
+) -> tuple[IntegrationCleanupOutcome, Exception | None]:
+    """Run post-uninstall integration cleanup when the manifest is parseable."""
+    default_outcome = IntegrationCleanupOutcome(
+        counts=default_counts,
+        deployed_files={},
+        failed_paths=[],
+        error_count=0,
+    )
+    try:
+        apm_package = APMPackage.from_apm_yml(manifest_path)
+    except Exception as manifest_err:
+        logger.warning("Integration cleanup did not finish.")
+        logger.warning("Run 'apm install' to resync remaining integrations.")
+        logger.verbose_detail(
+            f"Integration cleanup skipped: {type(manifest_err).__name__}: {manifest_err}"
+        )
+        return default_outcome, None
+
+    try:
+        return (
+            _sync_integrations_after_uninstall(
+                apm_package,
+                deploy_root,
+                all_deployed_files,
+                logger,
+                user_scope=user_scope,
+                lockfile=lockfile,
+                modules_dir=modules_dir,
+                deployed_file_hashes=deployed_file_hashes,
+            ),
+            None,
+        )
+    except Exception as sync_err:
+        logger.warning("Integration cleanup did not finish.")
+        logger.warning("Run 'apm install' to resync remaining integrations.")
+        logger.verbose_detail(f"Integration cleanup failed: {type(sync_err).__name__}: {sync_err}")
+        logger.verbose_detail(traceback.format_exc().rstrip())
+        return default_outcome, sync_err
 
 
 def _prepare_dependency_sections(data: dict) -> tuple[bool, list, list, list]:
@@ -472,36 +524,20 @@ def uninstall(ctx, packages, dry_run, verbose, global_):
             failed_paths=[],
             error_count=0,
         )
-        integration_cleanup_error: Exception | None = None
+        integration_cleanup, integration_cleanup_error = _sync_integrations_for_manifest(
+            manifest_path=manifest_path,
+            deploy_root=deploy_root,
+            all_deployed_files=all_deployed_files,
+            logger=logger,
+            user_scope=scope is InstallScope.USER,
+            lockfile=lockfile,
+            modules_dir=modules_dir,
+            deployed_file_hashes=all_deployed_file_hashes,
+            default_counts=cleaned,
+        )
+        cleaned = integration_cleanup.counts
+        surviving_deployed_files = integration_cleanup.deployed_files
         lockfile_ready = True
-        try:
-            apm_package = APMPackage.from_apm_yml(manifest_path)
-            integration_cleanup = _sync_integrations_after_uninstall(
-                apm_package,
-                deploy_root,
-                all_deployed_files,
-                logger,
-                user_scope=scope is InstallScope.USER,
-                lockfile=lockfile,
-                modules_dir=modules_dir,
-                deployed_file_hashes=all_deployed_file_hashes,
-            )
-            cleaned = integration_cleanup.counts
-            surviving_deployed_files = integration_cleanup.deployed_files
-        except Exception as _sync_err:
-            integration_cleanup_error = _sync_err
-            # Surface why integration cleanup failed instead of swallowing
-            # silently. Previously a bare `except: pass` here masked
-            # Windows-only failures where the DB row was never deleted on
-            # `apm uninstall --target copilot-app`.
-            logger.warning("Integration cleanup did not finish.")
-            logger.warning("Run 'apm install' to resync remaining integrations.")
-            # Preserve the traceback under verbose for diagnosing
-            # platform-specific failures without spamming default output.
-            logger.verbose_detail(
-                f"Integration cleanup failed: {type(_sync_err).__name__}: {_sync_err}"
-            )
-            logger.verbose_detail(traceback.format_exc().rstrip())
 
         if lockfile:
             try:
@@ -535,6 +571,7 @@ def uninstall(ctx, packages, dry_run, verbose, global_):
         from ...utils.path_security import PathTraversalError
 
         mcp_cleanup_error = None
+        mcp_cleanup_fatal = False
         try:
             apm_package = APMPackage.from_apm_yml(manifest_path)
             _cleanup_stale_mcp(
@@ -554,6 +591,7 @@ def uninstall(ctx, packages, dry_run, verbose, global_):
             PathTraversalError,
         ) as cleanup_error:
             mcp_cleanup_error = cleanup_error
+            mcp_cleanup_fatal = True
             recovery = ""
             if isinstance(cleanup_error, PathTraversalError):
                 recovery = (
@@ -623,6 +661,7 @@ def uninstall(ctx, packages, dry_run, verbose, global_):
             integration_cleanup_error,
             mcp_cleanup_error,
             lsp_cleanup_error,
+            mcp_cleanup_fatal,
         )
 
         # Fire post-uninstall lifecycle scripts

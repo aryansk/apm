@@ -1074,6 +1074,22 @@ class IntegrationCleanupOutcome:
         return self.error_count == 0
 
 
+def _native_hook_state_exists(project_root: Path, targets: list[object]) -> bool:
+    """Return whether cleanup may rewrite a merged native-hook config."""
+    from ...integration.hook_integrator import _APM_HOOKS_SIDECAR, _MERGE_HOOK_TARGETS
+
+    for target in targets:
+        config = _MERGE_HOOK_TARGETS.get(target.name)
+        if config is None:
+            continue
+        target_dir = project_root / target.root_dir
+        if (target_dir / config.config_filename).exists() or (
+            target_dir / _APM_HOOKS_SIDECAR
+        ).exists():
+            return True
+    return False
+
+
 def _sync_integrations_after_uninstall(
     apm_package: object,
     project_root: Path,
@@ -1106,6 +1122,15 @@ def _sync_integrations_after_uninstall(
     from ...primitives.discovery import clear_discovery_cache
 
     installed_modules_dir = modules_dir or Path(APM_MODULES_DIR)
+    config_target = list(apm_package.canonical_targets)
+    _explicit = config_target or None
+    _resolved_targets = resolve_targets(
+        project_root, user_scope=user_scope, explicit_target=_explicit
+    )
+    require_valid_survivors = bool(all_deployed_files) or _native_hook_state_exists(
+        project_root,
+        _resolved_targets,
+    )
     validated_survivors = (
         survivor_plan
         if survivor_plan is not None
@@ -1113,7 +1138,7 @@ def _sync_integrations_after_uninstall(
             list(apm_package.get_all_apm_dependencies()),
             installed_modules_dir,
             lockfile=lockfile,
-            require_valid_installed=True,
+            require_valid_installed=require_valid_survivors,
             logger=logger,
         )
     )
@@ -1138,11 +1163,6 @@ def _sync_integrations_after_uninstall(
     )
 
     # Resolve targets once -- used for both Phase 1 removal and Phase 2 re-integration.
-    config_target = list(apm_package.canonical_targets)
-    _explicit = config_target or None
-    _resolved_targets = resolve_targets(
-        project_root, user_scope=user_scope, explicit_target=_explicit
-    )
     target_survivor_plan = []
     for dep_ref, pkg_info in validated_survivors:
         target_selection = resolve_effective_package_targets(
