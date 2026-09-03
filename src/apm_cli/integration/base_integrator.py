@@ -16,8 +16,6 @@ from apm_cli.utils.path_security import (
     ensure_path_within,
     has_symlink_component,
 )
-
-
 def discover_primitives(*args: Any, **kwargs: Any) -> Any:
     from apm_cli.primitives.discovery import discover_primitives as _discover_primitives
 
@@ -54,7 +52,10 @@ def _managed_absolute_target_root(
             for mapping in target_profile.primitives.values():
                 if not mapping.subdir:
                     continue
-                primitive_root = (resolved_root / mapping.subdir).resolve()
+                primitive_path = deploy_root / mapping.subdir
+                if has_symlink_component(deploy_root, candidate.parent):
+                    continue
+                primitive_root = primitive_path.resolve()
                 try:
                     contained = ensure_path_within(resolved, primitive_root)
                 except PathTraversalError:
@@ -573,13 +574,8 @@ class BaseIntegrator:
             return False
         target = project_root / rel_path
         try:
-            lexical_parent = project_root
-            for part in candidate.parent.parts:
-                if part in ("", "."):
-                    continue
-                lexical_parent /= part
-                if lexical_parent.is_symlink():
-                    return False
+            if has_symlink_component(project_root, target.parent):
+                return False
             root = resolved_project_root or project_root.resolve()
             containment_target = target.parent if allow_final_symlink else target
             if not containment_target.resolve().is_relative_to(root):

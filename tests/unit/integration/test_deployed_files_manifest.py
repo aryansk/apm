@@ -852,6 +852,42 @@ class TestHookSync:
         if target_exists:
             assert outside_file.read_text(encoding="utf-8") == '{"outside": true}'
 
+    def test_sync_rejects_absolute_managed_hook_parent_symlink(self, tmp_path: Path):
+        """Absolute managed roots must reject symlinked hook parents."""
+        from dataclasses import replace
+
+        project_root = tmp_path / "project"
+        project_root.mkdir()
+        target_root = tmp_path / "claude-root"
+        redirected_hooks = target_root / "redirected" / "hooks"
+        redirected_hooks.mkdir(parents=True)
+        redirected_file = redirected_hooks / "pkg-hooks.json"
+        redirected_file.write_text('{"outside": true}', encoding="utf-8")
+        try:
+            (target_root / "hooks").symlink_to(
+                redirected_hooks,
+                target_is_directory=True,
+            )
+        except (NotImplementedError, OSError) as exc:
+            pytest.skip(f"symlink creation unavailable: {exc}")
+
+        target = replace(
+            KNOWN_TARGETS["claude"],
+            root_dir=str(target_root),
+            resolved_deploy_root=target_root,
+        )
+        managed_path = target_root / "hooks" / "pkg-hooks.json"
+        stats = HookIntegrator().sync_integration(
+            None,
+            project_root,
+            managed_files={str(managed_path)},
+            targets=[target],
+        )
+
+        assert stats["files_removed"] == 0
+        assert stats["unsafe_paths"] == [str(managed_path)]
+        assert redirected_file.read_text(encoding="utf-8") == '{"outside": true}'
+
 
 # ---------------------------------------------------------------------------
 # 10. Skill integrator — directory-level behavior + sync
