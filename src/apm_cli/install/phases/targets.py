@@ -489,6 +489,7 @@ def run(ctx: InstallContext) -> None:
             manifest_target=config_target,
             user_scope=ctx.scope is InstallScope.USER,
             auto_detect=False,
+            create_config=getattr(ctx, "create_config", True),
         )
         ctx.target_decision = target_decision
         ctx.target_override = target_decision.value

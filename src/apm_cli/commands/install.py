@@ -5,6 +5,7 @@ import contextlib
 import dataclasses
 import os
 import sys
+import tempfile
 import time
 from collections.abc import Callable
 from pathlib import Path
@@ -209,6 +210,7 @@ class InstallContext:
     trust_bin: bool | None = None
     exec_allow_map: builtins.dict[str, builtins.dict[str, bool]] | None = None
     exec_allow_resolved: bool = False
+    create_config: bool = True
 
 
 # APM Dependencies (conditional import for graceful degradation)
@@ -601,6 +603,7 @@ def _validate_and_add_packages_to_apm_yml(
     allow_insecure=False,
     skill_subset=None,
     skill_subset_from_cli=False,
+    create_config=True,
 ):
     """Validate packages exist and can be accessed, then add to apm.yml dependencies section.
 
@@ -635,7 +638,7 @@ def _validate_and_add_packages_to_apm_yml(
 
     from ..install.registry_wiring import get_effective_default_registry
 
-    _default_registry_for_cli = get_effective_default_registry(data)
+    _default_registry_for_cli = get_effective_default_registry(data, create_config=create_config)
 
     # Ensure dependencies structure exists
     dep_section = "devDependencies" if dev else "dependencies"
@@ -750,15 +753,60 @@ def _prepare_dry_run_manifest_path(
     dry_run: bool,
     user_scope: bool,
     has_packages: bool,
-):
+) -> tuple[Path, tempfile.TemporaryDirectory | None]:
     """Redirect an absent user manifest to temporary storage during previews."""
     if not (dry_run and user_scope and has_packages and not manifest_path.exists()):
         return manifest_path, None
 
-    import tempfile
-
     temp_dir = tempfile.TemporaryDirectory(prefix="apm-dry-run-")
     return Path(temp_dir.name) / manifest_path.name, temp_dir
+
+
+def _prepare_user_scope_for_install(
+    *,
+    dry_run: bool,
+    logger: InstallLogger,
+    ensure_user_dirs: Callable[[], None],
+    warn_unsupported_user_scope: Callable[[], str | None],
+) -> None:
+    """Prepare user-scope install paths unless the invocation is read-only."""
+    if not dry_run:
+        ensure_user_dirs()
+    logger.progress("Installing to user scope (~/.apm/)")
+    if scope_warning := warn_unsupported_user_scope():
+        logger.warning(scope_warning)
+
+
+def _cleanup_dry_run_user_config(apm_dir: Path) -> None:
+    """Remove the default config file if dry-run preview code created it."""
+    config_file = apm_dir / "config.json"
+    with contextlib.suppress(OSError, UnicodeDecodeError):
+        if config_file.read_text(encoding="utf-8") == '{"default_client": "vscode"}':
+            config_file.unlink()
+    with contextlib.suppress(OSError):
+        apm_dir.rmdir()
+
+
+def _report_bootstrap_manifest(
+    *,
+    logger: InstallLogger,
+    manifest_display: str,
+    manifest_targets: list[str],
+    dry_run: bool,
+    user_scope: bool,
+) -> None:
+    """Render bootstrap messages with dry-run-safe wording."""
+    if dry_run:
+        logger.progress(f"Dry run: Would create {manifest_display}")
+    else:
+        logger.success(f"Created {manifest_display}")
+    if not manifest_targets:
+        return
+    target_list = ", ".join(manifest_targets)
+    if dry_run and user_scope:
+        logger.progress(f"Dry run: Would set targets: {target_list} (in {manifest_display})")
+        return
+    logger.progress(f"Targets set: {target_list} (persisted to {manifest_display})")
 
 
 # ---------------------------------------------------------------------------
@@ -1242,6 +1290,7 @@ def install(  # noqa: PLR0913
     command_result: InstallResult | None = None
     transaction: InstallTransaction | None = None
     dry_run_manifest_tmp = None
+    dry_run_user_apm_dir = None
     from ..install.service import InstallService
 
     try:
@@ -1440,6 +1489,8 @@ def install(  # noqa: PLR0913
             summary_rendered = True
             return
 
+        create_user_config = not (dry_run and global_)
+
         # Resolve transport selection inputs.
         from ..deps.transport_selection import (
             ProtocolPreference,
@@ -1456,13 +1507,13 @@ def install(  # noqa: PLR0913
             # Precedence: APM_GIT_PROTOCOL env var > apm config ssh > git insteadOf
             from ..config import get_apm_protocol_pref as _get_apm_protocol_pref
 
-            _pref_str = _get_apm_protocol_pref(bootstrap=not dry_run)
+            _pref_str = _get_apm_protocol_pref(create_config=not dry_run)
             protocol_pref = ProtocolPreference.from_str(_pref_str)
         # CLI flag > env var (APM_ALLOW_PROTOCOL_FALLBACK) > apm config > default.
         # get_apm_allow_protocol_fallback() already encodes env > config > False.
         from ..config import get_apm_allow_protocol_fallback as _get_apm_apf
 
-        allow_protocol_fallback = allow_protocol_fallback or _get_apm_apf(bootstrap=not dry_run)
+        allow_protocol_fallback = allow_protocol_fallback or _get_apm_apf(create_config=not dry_run)
 
         # Resolve scope
         from ..core.scope import (
@@ -1474,16 +1525,18 @@ def install(  # noqa: PLR0913
         )
 
         if scope is InstallScope.USER:
-            if not dry_run:
-                ensure_user_dirs()
-            logger.progress("Installing to user scope (~/.apm/)")
-            _scope_warn = warn_unsupported_user_scope()
-            if _scope_warn:
-                logger.warning(_scope_warn)
+            _prepare_user_scope_for_install(
+                dry_run=dry_run,
+                logger=logger,
+                ensure_user_dirs=ensure_user_dirs,
+                warn_unsupported_user_scope=warn_unsupported_user_scope,
+            )
 
         # Scope-aware paths
         manifest_path = get_manifest_path(scope)
         apm_dir = get_apm_dir(scope)
+        if dry_run and scope is InstallScope.USER and not apm_dir.exists():
+            dry_run_user_apm_dir = apm_dir
         # Display name for messages (short for project scope, full for user scope)
         manifest_display = str(manifest_path) if scope is InstallScope.USER else APM_YML_FILENAME
         manifest_path, dry_run_manifest_tmp = _prepare_dry_run_manifest_path(
@@ -1529,14 +1582,13 @@ def install(  # noqa: PLR0913
             if manifest_targets := manifest_targets_from_target_option(target):
                 config["targets"] = manifest_targets
             _create_minimal_apm_yml(config, target_path=manifest_path)
-            if dry_run:
-                logger.progress(f"Dry run: Would create {manifest_display}")
-            else:
-                logger.success(f"Created {manifest_display}")
-            if manifest_targets:
-                logger.progress(
-                    f"Targets set: {', '.join(manifest_targets)} (persisted to {manifest_display})"
-                )
+            _report_bootstrap_manifest(
+                logger=logger,
+                manifest_display=manifest_display,
+                manifest_targets=manifest_targets,
+                dry_run=dry_run,
+                user_scope=scope is InstallScope.USER,
+            )
 
         if not apm_yml_exists and not packages:
             logger.error(f"No {manifest_display} found")
@@ -1560,6 +1612,7 @@ def install(  # noqa: PLR0913
                 allow_insecure=allow_insecure,
                 skill_subset=_skill_subset,
                 skill_subset_from_cli=bool(skill_names),
+                create_config=create_user_config,
             )
             transaction.record_validation(outcome)
             command_result = transaction.validation_result()
@@ -1604,6 +1657,7 @@ def install(  # noqa: PLR0913
                 skill_subset=_skill_subset,
                 skill_subset_from_cli=bool(skill_names),
                 trust_bin=trust_bin,
+                create_config=create_user_config,
             )
 
             apm_count, mcp_count, lsp_count, apm_diagnostics = _install_apm_packages(
@@ -1711,6 +1765,8 @@ def install(  # noqa: PLR0913
         close_install_contexts(_root_redirect, transaction)
         if dry_run_manifest_tmp is not None:
             dry_run_manifest_tmp.cleanup()
+        if dry_run_user_apm_dir is not None:
+            _cleanup_dry_run_user_config(dry_run_user_apm_dir)
         # F5 (#1116): render minimal elapsed-time line on exit paths that
         # did not already render the full install summary. Best-effort:
         # never let a render failure mask the original exception/exit.

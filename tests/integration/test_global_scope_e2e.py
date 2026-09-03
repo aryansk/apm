@@ -314,6 +314,33 @@ class TestGlobalManifestPlacement:
             f"stdout: {result.stdout}\nstderr: {result.stderr}"
         )
 
+    def test_global_dry_run_with_absent_manifest_does_not_create_user_state(
+        self,
+        apm_binary_path,
+        fake_home,
+        local_package,
+    ):
+        """Dry-run global bootstrap validates without creating ~/.apm state."""
+        work_dir = fake_home / "workdir"
+        work_dir.mkdir()
+
+        result = _run_apm(
+            apm_binary_path,
+            ["install", "--dry-run", "--global", str(local_package)],
+            work_dir,
+            fake_home,
+        )
+
+        combined = result.stdout + result.stderr
+        unwrapped = combined.replace("\n", "").replace(" ", "")
+        user_manifest = fake_home / ".apm" / "apm.yml"
+        assert result.returncode == 0, combined
+        assert "Dry run: Would create" in combined
+        assert str(user_manifest) in unwrapped
+        assert local_package.name in combined
+        assert not (fake_home / ".apm").exists()
+        assert not (work_dir / "apm.yml").exists()
+
     def test_user_manifest_does_not_pollute_cwd(self, apm_binary_path, fake_home, local_package):
         """--global must not create apm.yml in the working directory."""
         work_dir = fake_home / "workdir"
