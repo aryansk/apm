@@ -1348,18 +1348,18 @@ def _remove_stale_mcp_from_recorded_targets(
     project_root: Path | None,
     user_scope: bool,
     scope: object | None,
-) -> None:
+    target_servers: dict[str, set[str]] | None = None,
+) -> dict[str, set[str]]:
     """Clean only runtimes recorded in the deployment ledger, without fail-fast."""
-    target_servers = {
-        runtime: builtins.set(servers)
-        for runtime, servers in (lockfile.mcp_target_servers or {}).items()
-    }
-    if not target_servers:
-        if lockfile._mcp_target_servers_present:
-            return
-        from ...install.mcp.ownership import adopt_legacy_mcp_target_servers
+    if target_servers is None:
+        from ...install.mcp.ownership import resolve_mcp_target_servers
 
-        target_servers = adopt_legacy_mcp_target_servers(
+        target_servers = resolve_mcp_target_servers(
+            recorded_target_servers={
+                runtime: builtins.set(servers)
+                for runtime, servers in (lockfile.mcp_target_servers or {}).items()
+            },
+            ownership_present=lockfile._mcp_target_servers_present,
             server_names=stale_servers,
             stored_configs=lockfile.mcp_configs,
             project_root=project_root,
@@ -1384,6 +1384,7 @@ def _remove_stale_mcp_from_recorded_targets(
             failures.append((runtime, exc))
     if failures:
         raise MCPUninstallCleanupError(failures) from failures[0][1]
+    return target_servers
 
 
 def _cleanup_stale_mcp(
@@ -1411,6 +1412,19 @@ def _cleanup_stale_mcp(
     )
     new_mcp_servers = MCPIntegrator.get_server_names(view.dependencies)
     stale_servers = old_mcp_servers - new_mcp_servers
+    from ...install.mcp.ownership import resolve_mcp_target_servers
+
+    target_servers = resolve_mcp_target_servers(
+        recorded_target_servers={
+            runtime: builtins.set(servers)
+            for runtime, servers in (lockfile.mcp_target_servers or {}).items()
+        },
+        ownership_present=lockfile._mcp_target_servers_present,
+        server_names=old_mcp_servers,
+        stored_configs=lockfile.mcp_configs,
+        project_root=project_root,
+        user_scope=user_scope,
+    )
     if stale_servers:
         _remove_stale_mcp_from_recorded_targets(
             stale_servers,
@@ -1418,13 +1432,20 @@ def _cleanup_stale_mcp(
             project_root=project_root,
             user_scope=user_scope,
             scope=scope,
+            target_servers=target_servers,
         )
+    contracted_target_servers = {
+        runtime: sorted(servers.intersection(new_mcp_servers))
+        for runtime, servers in target_servers.items()
+        if servers.intersection(new_mcp_servers)
+    }
     if persist:
         MCPIntegrator.update_lockfile(
             new_mcp_servers,
             lockfile_path,
             mcp_configs=dict(view.configs),
             mcp_config_provenance=dict(view.provenance),
+            mcp_target_servers=contracted_target_servers,
         )
         return
 
@@ -1435,9 +1456,5 @@ def _cleanup_stale_mcp(
 
     DeploymentLedgerCodec.replace_mcp_target_servers(
         lockfile,
-        {
-            runtime: sorted(set(servers).intersection(new_mcp_servers))
-            for runtime, servers in lockfile.mcp_target_servers.items()
-            if set(servers).intersection(new_mcp_servers)
-        },
+        contracted_target_servers,
     )

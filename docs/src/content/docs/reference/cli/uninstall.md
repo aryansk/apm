@@ -100,7 +100,8 @@ What gets removed, in order:
    cleanup touches only the runtimes recorded as owners in `mcp_target_servers`.
    An explicitly empty ownership map is a no-op. Older lockfiles adopt only
    self-defined entries that exactly match their stored configuration baseline.
-   Cleanup attempts every owning runtime before reporting any failures.
+   Cleanup attempts every owning runtime before exiting nonzero on failure. Fix
+   the reported configs, then run `apm install` to reconcile stale entries.
 8. The lockfile entries themselves. If no dependencies remain, `apm.lock.yaml` is deleted.
 9. Empty parent directories left behind by the cleanup.
 

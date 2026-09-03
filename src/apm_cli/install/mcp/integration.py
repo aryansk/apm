@@ -255,16 +255,16 @@ def run_mcp_integration(  # noqa: PLR0913
         raise SystemExit(2) from exc
 
     if should_install and mcp_deps:
-        old_mcp_target_servers = old_mcp_target_servers or {}
-        if not old_mcp_target_servers_present and old_mcp_servers and old_mcp_configs:
-            from apm_cli.install.mcp.ownership import adopt_legacy_mcp_target_servers
+        from apm_cli.install.mcp.ownership import resolve_mcp_target_servers
 
-            old_mcp_target_servers = adopt_legacy_mcp_target_servers(
-                server_names=builtins.set(old_mcp_servers),
-                stored_configs=old_mcp_configs,
-                project_root=project_root,
-                user_scope=user_scope,
-            )
+        old_mcp_target_servers = resolve_mcp_target_servers(
+            recorded_target_servers=old_mcp_target_servers or {},
+            ownership_present=old_mcp_target_servers_present,
+            server_names=builtins.set(old_mcp_servers),
+            stored_configs=old_mcp_configs,
+            project_root=project_root,
+            user_scope=user_scope,
+        )
         if target_decision is not None:
             from apm_cli.install.mcp.ownership import migrate_legacy_project_target_servers
 

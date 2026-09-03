@@ -132,6 +132,33 @@ def _strip_jsonc_comments(raw: str) -> str:
     return "".join(chars)
 
 
+def _strip_jsonc_trailing_commas(raw: str) -> str:
+    """Blank trailing commas outside strings so strict JSON parsing accepts JSONC."""
+    chars = list(raw)
+    in_string = False
+    escaped = False
+    for index, char in enumerate(chars):
+        if in_string:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == '"':
+                in_string = False
+            continue
+        if char == '"':
+            in_string = True
+            continue
+        if char != ",":
+            continue
+        next_index = index + 1
+        while next_index < len(chars) and chars[next_index].isspace():
+            next_index += 1
+        if next_index < len(chars) and chars[next_index] in "}]":
+            chars[index] = " "
+    return "".join(chars)
+
+
 def _config_without_servers(
     config: dict,
     names: set[str],
@@ -194,7 +221,7 @@ class IntelliJClientAdapter(CopilotClientAdapter):
                 "Check its permissions and UTF-8 encoding, then rerun apm install."
             ) from exc
         try:
-            config = json.loads(_strip_jsonc_comments(raw))
+            config = json.loads(_strip_jsonc_trailing_commas(_strip_jsonc_comments(raw)))
         except json.JSONDecodeError as exc:
             raise IntelliJConfigError(
                 f"JetBrains Copilot MCP config at '{path}' is malformed JSON ({exc}). "

@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from apm_cli.utils.yaml_io import dump_yaml
+from apm_cli.utils.yaml_io import dump_yaml, load_yaml
 from tests.utils.apm_lifecycle_runner import ApmLifecycleRunner
 from tests.utils.artifact_snapshot import ArtifactSnapshot
 from tests.utils.isolated_apm_environment import IsolatedApmEnvironment
@@ -70,7 +70,12 @@ def _runner(apm_binary_path: Path) -> ApmLifecycleRunner:
     return ApmLifecycleRunner((str(apm_binary_path),), scenario_timeout_seconds=300)
 
 
-def _write_mcp_package(package: Path) -> None:
+def _write_mcp_package(
+    package: Path,
+    *,
+    server_name: str = "managed-server",
+    server_url: str = _SERVER_URL,
+) -> None:
     dump_yaml(
         {
             "name": "agent-config",
@@ -78,10 +83,10 @@ def _write_mcp_package(package: Path) -> None:
             "dependencies": {
                 "mcp": [
                     {
-                        "name": "managed-server",
+                        "name": server_name,
                         "registry": False,
                         "transport": "http",
-                        "url": _SERVER_URL,
+                        "url": server_url,
                     }
                 ]
             },
@@ -613,8 +618,8 @@ def test_uninstall_cleans_owned_intellij_jsonc_without_corrupting_url(
             "  // preserve this user entry\n"
             '  "servers": {\n'
             f'    "managed-server": {json.dumps(_server(_SERVER_URL))},\n'
-            f'    "user-server": {json.dumps(_server(retained_url))}\n'
-            "  }\n"
+            f'    "user-server": {json.dumps(_server(retained_url))},\n'
+            "  },\n"
             "}\n"
         ),
         encoding="utf-8",
@@ -678,3 +683,123 @@ def test_uninstall_continues_after_intellij_cleanup_failure(
     output = uninstall.stderr + uninstall.stdout
     assert "Uninstall incomplete" in output
     assert "run 'apm install'" in output
+
+
+def test_uninstall_preserves_legacy_ownership_for_surviving_server(
+    tmp_path: Path,
+    apm_binary_path: Path,
+) -> None:
+    """Sequential legacy uninstalls retain ownership until each server is removed."""
+    isolated = _create_environment(tmp_path, "legacy-sequential-uninstall")
+    first_package = isolated.package_root / "first-config"
+    second_package = isolated.package_root / "second-config"
+    first_package.mkdir()
+    second_package.mkdir()
+    _write_mcp_package(first_package, server_name="first-server")
+    _write_mcp_package(
+        second_package,
+        server_name="second-server",
+        server_url=_UPDATED_SERVER_URL,
+    )
+    project = isolated.work_root / "consumer"
+    project.mkdir()
+    first_ref = "../../packages/first-config"
+    second_ref = "../../packages/second-config"
+    dump_yaml(
+        {
+            "name": "legacy-sequential-uninstall-consumer",
+            "version": "1.0.0",
+            "dependencies": {"apm": [first_ref, second_ref]},
+        },
+        project / "apm.yml",
+    )
+    environment = isolated.subprocess_env(overrides={"APM_NON_INTERACTIVE": "1"})
+    runner = _runner(apm_binary_path)
+    install = runner.run(
+        (
+            "install",
+            "--target",
+            "intellij",
+            "--trust-transitive-mcp",
+            "--no-policy",
+        ),
+        scenario_id="legacy-sequential-uninstall-setup",
+        cwd=project,
+        env=environment,
+    )
+    assert install.returncode == 0, install.stderr + install.stdout
+    lock_path = project / "apm.lock.yaml"
+    legacy_lock = load_yaml(lock_path)
+    legacy_lock.pop("mcp_target_servers")
+    dump_yaml(legacy_lock, lock_path)
+
+    first_uninstall = runner.run(
+        ("uninstall", first_ref),
+        scenario_id="legacy-sequential-uninstall-first",
+        cwd=project,
+        env=environment,
+    )
+
+    assert first_uninstall.returncode == 0, first_uninstall.stderr + first_uninstall.stdout
+    canonical, _legacy, _data_path = _intellij_paths(isolated)
+    first_config = json.loads(canonical.read_text(encoding="utf-8"))["servers"]
+    assert set(first_config) == {"second-server"}
+    contracted_lock = load_yaml(lock_path)
+    assert contracted_lock["mcp_target_servers"] == {"intellij": ["second-server"]}
+
+    second_uninstall = runner.run(
+        ("uninstall", second_ref),
+        scenario_id="legacy-sequential-uninstall-second",
+        cwd=project,
+        env=environment,
+    )
+
+    assert second_uninstall.returncode == 0, second_uninstall.stderr + second_uninstall.stdout
+    second_config = json.loads(canonical.read_text(encoding="utf-8"))["servers"]
+    assert second_config == {}
+
+
+def test_uninstall_treats_explicit_empty_ownership_as_noop(
+    tmp_path: Path,
+    apm_binary_path: Path,
+) -> None:
+    """An explicit empty ownership map never authorizes target cleanup."""
+    isolated = _create_environment(tmp_path, "explicit-empty-uninstall")
+    package = isolated.package_root / "agent-config"
+    package.mkdir()
+    _write_mcp_package(package)
+    project = isolated.work_root / "consumer"
+    project.mkdir()
+    package_ref = "../../packages/agent-config"
+    _write_consumer(project, package_ref, "explicit-empty-uninstall-consumer")
+    environment = isolated.subprocess_env(overrides={"APM_NON_INTERACTIVE": "1"})
+    runner = _runner(apm_binary_path)
+    install = runner.run(
+        (
+            "install",
+            "--target",
+            "intellij",
+            "--trust-transitive-mcp",
+            "--no-policy",
+        ),
+        scenario_id="explicit-empty-uninstall-setup",
+        cwd=project,
+        env=environment,
+    )
+    assert install.returncode == 0, install.stderr + install.stdout
+    lock_path = project / "apm.lock.yaml"
+    explicit_empty_lock = load_yaml(lock_path)
+    explicit_empty_lock["mcp_target_servers"] = {}
+    dump_yaml(explicit_empty_lock, lock_path)
+    canonical, _legacy, _data_path = _intellij_paths(isolated)
+    original = canonical.read_bytes()
+
+    uninstall = runner.run(
+        ("uninstall", package_ref),
+        scenario_id="explicit-empty-uninstall",
+        cwd=project,
+        env=environment,
+    )
+
+    assert uninstall.returncode == 0, uninstall.stderr + uninstall.stdout
+    assert canonical.read_bytes() == original
