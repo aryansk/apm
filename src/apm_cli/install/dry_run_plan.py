@@ -87,6 +87,20 @@ class ProspectiveInstallPlan:
         return self.lsp_dependencies if self.should_install_mcp else ()
 
     @property
+    def lsp_dependency_count(self) -> int:
+        """Return the number of LSP dependencies selected for preview."""
+        return len(self.selected_lsp_dependencies)
+
+    @property
+    def dependency_counts(self) -> tuple[int, int, int]:
+        """Return selected APM, MCP, and LSP dependency counts."""
+        return (
+            self.apm_dependency_count,
+            self.mcp_dependency_count,
+            self.lsp_dependency_count,
+        )
+
+    @property
     def intended_dependency_keys(self) -> frozenset[str]:
         """Return the dependency identities used for orphan previewing."""
         keys: set[str] = set()

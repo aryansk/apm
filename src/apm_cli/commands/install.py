@@ -1824,7 +1824,7 @@ def _install_apm_packages(ctx, outcome):
             update=ctx.update,
             apm_dir=ctx.apm_dir,
         )
-        return prospective_plan.apm_dependency_count, prospective_plan.mcp_dependency_count, 0, None
+        return (*prospective_plan.dependency_counts, None)
 
     _check_insecure_dependencies(all_apm_deps, ctx.allow_insecure, logger)
 

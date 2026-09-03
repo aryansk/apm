@@ -90,6 +90,8 @@ class TestRenderApmDeps:
 
         assert plan.apm_dependency_count == 0
         assert plan.mcp_dependency_count == 1
+        assert plan.lsp_dependency_count == 0
+        assert plan.dependency_counts == (0, 1, 0)
 
     def test_plan_selects_only_requested_dependency_without_reparsing_it(self) -> None:
         """Preview selection retains the interpreted dependency object."""
@@ -196,9 +198,7 @@ class TestRenderApmDeps:
         all_calls = " ".join(str(c) for c in logger.progress.call_args_list)
         assert "MCP dependencies" in all_calls
 
-    def test_lsp_only_deps_are_rendered_without_empty_message(
-        self, tmp_path: Path
-    ) -> None:
+    def test_lsp_only_deps_are_rendered_without_empty_message(self, tmp_path: Path) -> None:
         """LSP-only manifests render servers and do not report an empty plan."""
         logger = _make_logger()
         dep = _make_lsp_dep("gopls")
@@ -220,6 +220,28 @@ class TestRenderApmDeps:
         assert "LSP dependencies" in all_calls
         assert "gopls" in all_calls
         assert "No dependencies" not in all_calls
+
+    def test_filtered_lsp_only_deps_show_empty_message(self, tmp_path: Path) -> None:
+        """An APM-only dry run explains that its selected plan is empty."""
+        logger = _make_logger()
+
+        with patch("apm_cli.deps.lockfile.LockFile.read", side_effect=Exception):
+            render_and_exit(
+                logger=logger,
+                should_install_apm=True,
+                apm_deps=[],
+                mcp_deps=[],
+                lsp_deps=[_make_lsp_dep("gopls")],
+                dev_apm_deps=[],
+                should_install_mcp=False,
+                update=False,
+                apm_dir=tmp_path,
+            )
+
+        all_calls = " ".join(str(c) for c in logger.progress.call_args_list)
+        assert "LSP dependencies" not in all_calls
+        assert "gopls" not in all_calls
+        assert "No dependencies" in all_calls
 
     def test_no_deps_shows_empty_message(self, tmp_path: Path) -> None:
         """When all dep lists are empty the 'No dependencies found' message is shown (line 53)."""

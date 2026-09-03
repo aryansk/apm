@@ -40,6 +40,45 @@ dependencies:
     (github_dir / "copilot-instructions.md").write_text("# Test project\n", encoding="utf-8")
 
 
+def _write_lsp_only_manifest(project_root: Path) -> None:
+    """Create a project whose only dependency is an LSP server."""
+    (project_root / "apm.yml").write_text(
+        """
+name: lsp-dry-run
+version: "1.0.0"
+targets:
+  - copilot
+dependencies:
+  lsp:
+    - name: pyright
+      command: pyright-langserver
+      extensionToLanguage:
+        .py: python
+""".lstrip(),
+        encoding="utf-8",
+    )
+
+
+@patch("apm_cli.commands._helpers.check_for_updates", return_value=None)
+def test_lsp_only_dry_run_renders_server_through_install_command(
+    _mock_updates,
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    """The command forwards LSP dependencies into its dry-run preview."""
+    _write_lsp_only_manifest(tmp_path)
+    monkeypatch.chdir(tmp_path)
+
+    result = CliRunner().invoke(cli, ["install", "--dry-run"])
+
+    assert result.exit_code == 0, result.output
+    assert "LSP dependencies (1):" in result.output
+    assert "pyright" in result.output
+    assert "No dependencies found" not in result.output
+    assert "would install 1 LSP server" in result.output
+    assert not (tmp_path / "apm.lock.yaml").exists()
+
+
 @patch("apm_cli.commands._helpers.check_for_updates", return_value=None)
 def test_repeated_install_with_unchanged_lsp_keeps_lockfile_bytes(
     _mock_updates,
