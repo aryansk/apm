@@ -1290,11 +1290,11 @@ def _sync_integrations_after_uninstall(
     if unsafe_hook_paths:
         logger.warning(
             f"Skipped {len(unsafe_hook_paths)} managed hook path(s) that failed "
-            "containment validation. Re-run with --verbose to list paths, then "
-            "inspect or repair symlinked parents before removing anything."
+            "containment validation. Inspect or repair symlinked parents before "
+            "removing anything."
         )
         for unsafe_path in unsafe_hook_paths:
-            logger.verbose_detail(f"Skipped unsafe managed hook path: {unsafe_path}")
+            logger.warning(f"Preserved managed hook path: {unsafe_path}")
 
     # Phase 2: Re-integrate from remaining installed packages.
     #

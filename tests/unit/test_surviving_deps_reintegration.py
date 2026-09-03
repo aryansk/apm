@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from datetime import datetime
 from pathlib import Path
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, call
 
 import pytest
 import yaml
@@ -115,14 +115,13 @@ def test_uninstall_warns_when_managed_hook_fails_containment(
         lockfile=LockFile(),
     )
 
-    logger.warning.assert_called_once_with(
-        "Skipped 1 managed hook path(s) that failed containment validation. "
-        "Re-run with --verbose to list paths, then inspect or repair symlinked "
-        "parents before removing anything."
-    )
-    logger.verbose_detail.assert_any_call(
-        "Skipped unsafe managed hook path: .copilot/hooks/pkg-hooks.json"
-    )
+    assert logger.warning.call_args_list == [
+        call(
+            "Skipped 1 managed hook path(s) that failed containment validation. "
+            "Inspect or repair symlinked parents before removing anything."
+        ),
+        call("Preserved managed hook path: .copilot/hooks/pkg-hooks.json"),
+    ]
 
 
 def test_surviving_refs_include_lockfile_transitive(tmp_path: Path) -> None:
