@@ -70,6 +70,37 @@ def _runner(apm_binary_path: Path) -> ApmLifecycleRunner:
     return ApmLifecycleRunner((str(apm_binary_path),), scenario_timeout_seconds=300)
 
 
+def _write_mcp_package(package: Path) -> None:
+    dump_yaml(
+        {
+            "name": "agent-config",
+            "version": "1.0.0",
+            "dependencies": {
+                "mcp": [
+                    {
+                        "name": "managed-server",
+                        "registry": False,
+                        "transport": "http",
+                        "url": _SERVER_URL,
+                    }
+                ]
+            },
+        },
+        package / "apm.yml",
+    )
+
+
+def _write_consumer(project: Path, package_ref: str, name: str) -> None:
+    dump_yaml(
+        {
+            "name": name,
+            "version": "1.0.0",
+            "dependencies": {"apm": [package_ref]},
+        },
+        project / "apm.yml",
+    )
+
+
 def test_direct_install_uses_config_state_for_full_lifecycle(
     tmp_path: Path,
     apm_binary_path: Path,
@@ -544,3 +575,106 @@ def test_uninstall_does_not_touch_unowned_intellij_jsonc(
     assert canonical.read_bytes() == original
     claude_config = json.loads((project / ".mcp.json").read_text(encoding="utf-8"))
     assert "managed-server" not in claude_config["mcpServers"]
+
+
+def test_uninstall_cleans_owned_intellij_jsonc_without_corrupting_url(
+    tmp_path: Path,
+    apm_binary_path: Path,
+) -> None:
+    """Owned JSONC cleanup preserves an unrelated URL containing slashes."""
+    isolated = _create_environment(tmp_path, "owned-jsonc-uninstall")
+    package = isolated.package_root / "agent-config"
+    package.mkdir()
+    _write_mcp_package(package)
+    project = isolated.work_root / "consumer"
+    project.mkdir()
+    package_ref = "../../packages/agent-config"
+    _write_consumer(project, package_ref, "owned-jsonc-uninstall-consumer")
+    environment = isolated.subprocess_env(overrides={"APM_NON_INTERACTIVE": "1"})
+    canonical, _legacy, _data_path = _intellij_paths(isolated)
+    runner = _runner(apm_binary_path)
+    install = runner.run(
+        (
+            "install",
+            "--target",
+            "intellij",
+            "--trust-transitive-mcp",
+            "--no-policy",
+        ),
+        scenario_id="owned-jsonc-uninstall-setup",
+        cwd=project,
+        env=environment,
+    )
+    assert install.returncode == 0, install.stderr + install.stdout
+    retained_url = "https://user.example.invalid/mcp"
+    canonical.write_text(
+        (
+            "{\n"
+            "  // preserve this user entry\n"
+            '  "servers": {\n'
+            f'    "managed-server": {json.dumps(_server(_SERVER_URL))},\n'
+            f'    "user-server": {json.dumps(_server(retained_url))}\n'
+            "  }\n"
+            "}\n"
+        ),
+        encoding="utf-8",
+    )
+
+    uninstall = runner.run(
+        ("uninstall", package_ref),
+        scenario_id="owned-jsonc-uninstall",
+        cwd=project,
+        env=environment,
+    )
+
+    assert uninstall.returncode == 0, uninstall.stderr + uninstall.stdout
+    config = json.loads(canonical.read_text(encoding="utf-8"))
+    assert set(config["servers"]) == {"user-server"}
+    assert config["servers"]["user-server"]["url"] == retained_url
+
+
+def test_uninstall_continues_after_intellij_cleanup_failure(
+    tmp_path: Path,
+    apm_binary_path: Path,
+) -> None:
+    """A failed IntelliJ target does not prevent later VS Code cleanup."""
+    isolated = _create_environment(tmp_path, "continued-uninstall")
+    package = isolated.package_root / "agent-config"
+    package.mkdir()
+    _write_mcp_package(package)
+    project = isolated.work_root / "consumer"
+    project.mkdir()
+    package_ref = "../../packages/agent-config"
+    _write_consumer(project, package_ref, "continued-uninstall-consumer")
+    environment = isolated.subprocess_env(overrides={"APM_NON_INTERACTIVE": "1"})
+    canonical, _legacy, _data_path = _intellij_paths(isolated)
+    runner = _runner(apm_binary_path)
+    install = runner.run(
+        (
+            "install",
+            "--target",
+            "intellij,vscode",
+            "--trust-transitive-mcp",
+            "--no-policy",
+        ),
+        scenario_id="continued-uninstall-setup",
+        cwd=project,
+        env=environment,
+    )
+    assert install.returncode == 0, install.stderr + install.stdout
+    vscode_path = project / ".vscode" / "mcp.json"
+    assert "managed-server" in json.loads(vscode_path.read_text(encoding="utf-8"))["servers"]
+    canonical.write_bytes(b"{malformed\n")
+
+    uninstall = runner.run(
+        ("uninstall", package_ref),
+        scenario_id="continued-uninstall",
+        cwd=project,
+        env=environment,
+    )
+
+    assert uninstall.returncode == 1
+    assert "managed-server" not in json.loads(vscode_path.read_text(encoding="utf-8"))["servers"]
+    output = uninstall.stderr + uninstall.stdout
+    assert "Uninstall incomplete" in output
+    assert "run 'apm install'" in output

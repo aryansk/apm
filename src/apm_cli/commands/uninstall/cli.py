@@ -467,6 +467,11 @@ def uninstall(ctx, packages, dry_run, verbose, global_):
                     " Fix the MCP config path, then run 'apm install' to reconcile "
                     "the stale entry; the package was already removed from apm.yml."
                 )
+            elif isinstance(cleanup_error, MCPUninstallCleanupError):
+                recovery = (
+                    " Fix the reported target configs, then run 'apm install' "
+                    "to reconcile stale MCP entries."
+                )
             logger.error(
                 "Uninstall incomplete: package removal completed, but MCP cleanup failed: "
                 f"{cleanup_error}{recovery}"
