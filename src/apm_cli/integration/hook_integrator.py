@@ -1910,6 +1910,7 @@ class HookIntegrator(BaseIntegrator):
                 ):
                     stats["errors"] += 1
                     stats.setdefault("unsafe_paths", []).append(normalized)
+                    stats.setdefault("failed_paths", []).append(normalized)
                     continue
                 target_file = project_root / rel_path
                 if target_file.is_symlink() or (target_file.exists() and target_file.is_file()):
@@ -1919,6 +1920,7 @@ class HookIntegrator(BaseIntegrator):
                         deleted.append(target_file)
                     except Exception:
                         stats["errors"] += 1
+                        stats.setdefault("failed_paths", []).append(normalized)
             # Batch parent cleanup -- single bottom-up pass
             self.cleanup_empty_parents(deleted, stop_at=project_root)
         else:
@@ -1931,6 +1933,7 @@ class HookIntegrator(BaseIntegrator):
                         stats["files_removed"] += 1
                     except Exception:
                         stats["errors"] += 1
+                        stats.setdefault("failed_paths", []).append(hook_file.as_posix())
 
         # Clean APM entries from merged-hook JSON configs, scoped to
         # `targets` when supplied -- matches the rebuild phase (#2250).
@@ -2045,7 +2048,7 @@ class HookIntegrator(BaseIntegrator):
     @staticmethod
     def _clean_apm_entries_from_json(
         json_path: Path,
-        stats: dict[str, int],
+        stats: dict[str, Any],
         container: str = "hooks",
         sidecar_path: Path | None = None,
     ) -> None:
@@ -2098,3 +2101,4 @@ class HookIntegrator(BaseIntegrator):
                 sidecar_path.unlink()
         except (json.JSONDecodeError, OSError):
             stats["errors"] += 1
+            stats.setdefault("failed_paths", []).append(json_path.as_posix())

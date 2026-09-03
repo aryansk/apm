@@ -11,6 +11,7 @@ from click.testing import CliRunner
 
 from apm_cli.commands.uninstall.cli import _cleanup_stale_lsp, uninstall
 from apm_cli.commands.uninstall.engine import (
+    IntegrationCleanupOutcome,
     LocalSlotRefresh,
     _activate_staged_local_refresh,
     _recover_local_refresh_backups,
@@ -224,7 +225,7 @@ def test_successful_alias_uses_portable_lifecycle_payloads(
         ),
         patch(
             "apm_cli.commands.uninstall.cli._sync_integrations_after_uninstall",
-            return_value=({}, {}, []),
+            return_value=IntegrationCleanupOutcome({}, {}, [], 0),
         ),
         patch("apm_cli.commands.uninstall.cli._cleanup_stale_mcp"),
     ):
@@ -263,7 +264,12 @@ def test_preserved_hook_makes_completed_package_removal_nonzero(
         ),
         patch(
             "apm_cli.commands.uninstall.cli._sync_integrations_after_uninstall",
-            return_value=({}, {}, [".copilot/hooks/preserved.json"]),
+            return_value=IntegrationCleanupOutcome(
+                {},
+                {},
+                [".copilot/hooks/preserved.json"],
+                1,
+            ),
         ),
         patch("apm_cli.commands.uninstall.cli._cleanup_stale_mcp"),
     ):
@@ -391,7 +397,7 @@ def test_pre_uninstall_manifest_edits_are_reloaded_and_preserved(
         ),
         patch(
             "apm_cli.commands.uninstall.cli._sync_integrations_after_uninstall",
-            return_value=({}, {}, []),
+            return_value=IntegrationCleanupOutcome({}, {}, [], 0),
         ),
         patch("apm_cli.commands.uninstall.cli._cleanup_stale_mcp"),
     ):
@@ -428,7 +434,7 @@ def test_duplicate_identifier_removes_manifest_entry_once(
         ),
         patch(
             "apm_cli.commands.uninstall.cli._sync_integrations_after_uninstall",
-            return_value=({}, {}, []),
+            return_value=IntegrationCleanupOutcome({}, {}, [], 0),
         ),
         patch("apm_cli.commands.uninstall.cli._cleanup_stale_mcp"),
     ):

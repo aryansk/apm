@@ -117,7 +117,7 @@ def test_uninstall_warns_when_managed_hook_fails_containment(
 
     assert logger.warning.call_args_list == [
         call(
-            "Skipped 1 managed hook path(s) that failed containment validation. "
+            "Skipped 1 managed hook path that failed containment validation. "
             "Inspect or repair symlinked parents before removing anything."
         ),
         call("Preserved managed hook path: ~/.copilot/hooks/pkg-hooks.json"),

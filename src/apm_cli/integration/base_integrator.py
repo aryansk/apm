@@ -49,12 +49,12 @@ def _managed_absolute_target_root(
             if deploy_root is None:
                 continue
             resolved_root = deploy_root.resolve()
+            if has_symlink_component(deploy_root, candidate.parent):
+                continue
             for mapping in target_profile.primitives.values():
                 if not mapping.subdir:
                     continue
                 primitive_path = deploy_root / mapping.subdir
-                if has_symlink_component(deploy_root, candidate.parent):
-                    continue
                 primitive_root = primitive_path.resolve()
                 try:
                     contained = ensure_path_within(resolved, primitive_root)

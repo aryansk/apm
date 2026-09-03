@@ -20,7 +20,7 @@ import pytest
 
 from apm_cli.deps.lockfile import LockedDependency, LockFile  # noqa: F401
 from apm_cli.integration.agent_integrator import AgentIntegrator
-from apm_cli.integration.base_integrator import BaseIntegrator
+from apm_cli.integration.base_integrator import BaseIntegrator, _managed_absolute_target_root
 from apm_cli.integration.command_integrator import CommandIntegrator
 from apm_cli.integration.hook_integrator import HookIntegrator
 from apm_cli.integration.prompt_integrator import PromptIntegrator
@@ -711,6 +711,35 @@ class TestHookSync:
         assert not (hooks_dir / "pkg-hooks.json").exists()
         assert (hooks_dir / "user-hooks.json").exists()
 
+    def test_sync_reports_managed_file_unlink_failure(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """A failed unlink must make the cleanup outcome incomplete."""
+        hooks_dir = tmp_path / ".github" / "hooks"
+        hooks_dir.mkdir(parents=True)
+        managed_file = hooks_dir / "pkg-hooks.json"
+        managed_file.write_text('{"managed": true}')
+        original_unlink = Path.unlink
+
+        def fail_managed_unlink(path: Path, *args, **kwargs) -> None:
+            if path == managed_file:
+                raise OSError("simulated unlink failure")
+            original_unlink(path, *args, **kwargs)
+
+        monkeypatch.setattr(Path, "unlink", fail_managed_unlink)
+
+        stats = HookIntegrator().sync_integration(
+            None,
+            tmp_path,
+            managed_files={".github/hooks/pkg-hooks.json"},
+        )
+
+        assert stats["errors"] == 1
+        assert stats["failed_paths"] == [".github/hooks/pkg-hooks.json"]
+        assert managed_file.exists()
+
     def test_sync_ignores_non_hook_paths(self, tmp_path: Path):
         """Managed paths outside .github/hooks/ are ignored by hook sync."""
         hooks_dir = tmp_path / ".github" / "hooks"
@@ -751,6 +780,7 @@ class TestHookSync:
         assert stats["files_removed"] == 0
         assert stats["errors"] == 1
         assert stats["unsafe_paths"] == [".copilot/hooks/pkg-hooks.json"]
+        assert stats["failed_paths"] == [".copilot/hooks/pkg-hooks.json"]
         assert outside_file.read_text(encoding="utf-8") == '{"outside": true}'
 
     def test_sync_rejects_hook_root_redirect_within_project_root(self, tmp_path: Path):
@@ -887,6 +917,43 @@ class TestHookSync:
         assert stats["files_removed"] == 0
         assert stats["unsafe_paths"] == [str(managed_path)]
         assert redirected_file.read_text(encoding="utf-8") == '{"outside": true}'
+
+    def test_absolute_path_checks_symlink_components_once_per_target(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Primitive mappings share one invariant parent-component scan."""
+        from dataclasses import replace
+
+        target_root = tmp_path / "claude-root"
+        hooks_dir = target_root / "hooks"
+        hooks_dir.mkdir(parents=True)
+        target = replace(
+            KNOWN_TARGETS["claude"],
+            root_dir=str(target_root),
+            resolved_deploy_root=target_root,
+        )
+        calls = 0
+
+        def record_scan(_root: Path, _parent: Path) -> bool:
+            nonlocal calls
+            calls += 1
+            return False
+
+        monkeypatch.setattr(
+            "apm_cli.integration.base_integrator.has_symlink_component",
+            record_scan,
+        )
+
+        managed_root = _managed_absolute_target_root(
+            hooks_dir / "pkg-hooks.json",
+            [target],
+            allow_final_symlink=True,
+        )
+
+        assert managed_root == target_root.resolve()
+        assert calls == 1
 
 
 # ---------------------------------------------------------------------------

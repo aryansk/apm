@@ -12,6 +12,7 @@ from ...constants import APM_YML_FILENAME
 from ...core.command_logger import CommandLogger
 from ...models.apm_package import APMPackage
 from .engine import (
+    IntegrationCleanupOutcome,
     MCPUninstallCleanupError,
     _cleanup_staged_local_refreshes,
     _cleanup_stale_mcp,
@@ -26,6 +27,33 @@ from .engine import (
     _sync_integrations_after_uninstall,
     _validate_uninstall_packages,
 )
+
+
+def _report_uninstall_outcome(
+    logger: CommandLogger,
+    summary_lines: list[str],
+    integration_cleanup: IntegrationCleanupOutcome,
+    integration_cleanup_error: Exception | None,
+    mcp_cleanup_error: Exception | None,
+    lsp_cleanup_error: Exception | None,
+) -> bool:
+    """Render the final summary and return whether cleanup was incomplete."""
+    integration_incomplete = (
+        not integration_cleanup.complete or integration_cleanup_error is not None
+    )
+    if (
+        mcp_cleanup_error is None
+        and lsp_cleanup_error is None
+        and not integration_incomplete
+    ):
+        logger.success("Uninstall complete: " + ", ".join(summary_lines))
+    elif integration_incomplete:
+        logger.warning("Package removal finished, but managed hook cleanup is incomplete.")
+    return (
+        mcp_cleanup_error is not None
+        or lsp_cleanup_error is not None
+        or integration_incomplete
+    )
 
 
 def _prepare_dependency_sections(data: dict) -> tuple[bool, list, list, list]:
@@ -427,22 +455,29 @@ def uninstall(ctx, packages, dry_run, verbose, global_):
             "instructions": 0,
         }
         surviving_deployed_files = {}
-        unsafe_hook_paths: list[str] = []
+        integration_cleanup = IntegrationCleanupOutcome(
+            counts=cleaned,
+            deployed_files=surviving_deployed_files,
+            failed_paths=[],
+            error_count=0,
+        )
+        integration_cleanup_error: Exception | None = None
         lockfile_ready = True
         try:
             apm_package = APMPackage.from_apm_yml(manifest_path)
-            cleaned, surviving_deployed_files, unsafe_hook_paths = (
-                _sync_integrations_after_uninstall(
-                    apm_package,
-                    deploy_root,
-                    all_deployed_files,
-                    logger,
-                    user_scope=scope is InstallScope.USER,
-                    lockfile=lockfile,
-                    modules_dir=modules_dir,
-                )
+            integration_cleanup = _sync_integrations_after_uninstall(
+                apm_package,
+                deploy_root,
+                all_deployed_files,
+                logger,
+                user_scope=scope is InstallScope.USER,
+                lockfile=lockfile,
+                modules_dir=modules_dir,
             )
+            cleaned = integration_cleanup.counts
+            surviving_deployed_files = integration_cleanup.deployed_files
         except Exception as _sync_err:
+            integration_cleanup_error = _sync_err
             # Surface why integration cleanup failed instead of swallowing
             # silently. Previously a bare `except: pass` here masked
             # Windows-only failures where the DB row was never deleted on
@@ -568,14 +603,14 @@ def uninstall(ctx, packages, dry_run, verbose, global_):
         summary_lines = [f"Removed {len(packages_to_remove)} package(s) from apm.yml"]
         if removed_from_modules > 0:
             summary_lines.append(f"Removed {removed_from_modules} package(s) from apm_modules/")
-        if (
-            mcp_cleanup_error is None
-            and lsp_cleanup_error is None
-            and not unsafe_hook_paths
-        ):
-            logger.success("Uninstall complete: " + ", ".join(summary_lines))
-        elif unsafe_hook_paths:
-            logger.warning("Package removal finished, but managed hook cleanup is incomplete.")
+        cleanup_incomplete = _report_uninstall_outcome(
+            logger,
+            summary_lines,
+            integration_cleanup,
+            integration_cleanup_error,
+            mcp_cleanup_error,
+            lsp_cleanup_error,
+        )
 
         # Fire post-uninstall lifecycle scripts
         _fire_uninstall_scripts(
@@ -587,7 +622,7 @@ def uninstall(ctx, packages, dry_run, verbose, global_):
             verbose=verbose,
             deploy_root=deploy_root,
         )
-        if mcp_cleanup_error is not None or lsp_cleanup_error is not None or unsafe_hook_paths:
+        if cleanup_incomplete:
             sys.exit(1)
 
     except Exception as e:
