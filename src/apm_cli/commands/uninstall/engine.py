@@ -22,6 +22,16 @@ from ...utils.path_security import PathTraversalError, ensure_path_within, safe_
 from ...utils.paths import portable_relpath
 
 
+class MCPUninstallCleanupError(RuntimeError):
+    """Aggregate target-specific MCP cleanup failures."""
+
+    def __init__(self, failures: list[tuple[str, Exception]]) -> None:
+        self.failures = tuple(failures)
+        noun = "target" if len(failures) == 1 else "targets"
+        details = "; ".join(f"{runtime}: {error}" for runtime, error in failures)
+        super().__init__(f"MCP cleanup failed for {len(failures)} {noun}: {details}")
+
+
 def _is_marketplace_ref(package: str) -> bool:
     """Check if *package* is marketplace notation using the public API."""
     from ...marketplace.resolver import parse_marketplace_ref
@@ -1332,28 +1342,33 @@ def _sync_integrations_after_uninstall(
 
 
 def _remove_stale_mcp_from_recorded_targets(
-    stale_servers,
-    lockfile,
+    stale_servers: set[str],
+    lockfile: LockFile,
     *,
-    project_root,
-    user_scope,
-    scope,
-):
+    project_root: Path | None,
+    user_scope: bool,
+    scope: object | None,
+) -> None:
     """Clean only runtimes recorded in the deployment ledger, without fail-fast."""
-    target_servers = dict(getattr(lockfile, "mcp_target_servers", {}) or {})
+    target_servers = {
+        runtime: builtins.set(servers)
+        for runtime, servers in (lockfile.mcp_target_servers or {}).items()
+    }
     if not target_servers:
-        MCPIntegrator.remove_stale(
-            stale_servers,
+        if lockfile._mcp_target_servers_present:
+            return
+        from ...install.mcp.ownership import adopt_legacy_mcp_target_servers
+
+        target_servers = adopt_legacy_mcp_target_servers(
+            server_names=stale_servers,
+            stored_configs=lockfile.mcp_configs,
             project_root=project_root,
             user_scope=user_scope,
-            scope=scope,
-            fail_on_write_error=True,
         )
-        return
 
-    failures = []
+    failures: list[tuple[str, Exception]] = []
     for runtime, managed_servers in sorted(target_servers.items()):
-        scoped_stale = builtins.set(stale_servers).intersection(managed_servers)
+        scoped_stale = stale_servers.intersection(managed_servers)
         if not scoped_stale:
             continue
         try:
@@ -1367,10 +1382,8 @@ def _remove_stale_mcp_from_recorded_targets(
             )
         except Exception as exc:
             failures.append((runtime, exc))
-
     if failures:
-        runtimes = ", ".join(runtime for runtime, _exc in failures)
-        raise RuntimeError(f"MCP cleanup failed for target(s): {runtimes}") from failures[0][1]
+        raise MCPUninstallCleanupError(failures) from failures[0][1]
 
 
 def _cleanup_stale_mcp(

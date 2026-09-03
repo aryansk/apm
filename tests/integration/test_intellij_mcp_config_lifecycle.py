@@ -467,3 +467,80 @@ def test_uninstall_with_malformed_intellij_config_is_nonzero(
     normalized_output = " ".join((uninstall.stderr + uninstall.stdout).split())
     assert normalized_output.count("rerun apm install") == 1
     assert canonical.read_bytes() == original
+
+
+def test_uninstall_does_not_touch_unowned_intellij_jsonc(
+    tmp_path: Path,
+    apm_binary_path: Path,
+) -> None:
+    """Claude-scoped uninstall leaves same-name IntelliJ JSONC untouched."""
+    isolated = _create_environment(tmp_path, "scoped-uninstall")
+    package = isolated.package_root / "agent-config"
+    package.mkdir()
+    dump_yaml(
+        {
+            "name": "agent-config",
+            "version": "1.0.0",
+            "dependencies": {
+                "mcp": [
+                    {
+                        "name": "managed-server",
+                        "registry": False,
+                        "transport": "http",
+                        "url": _SERVER_URL,
+                    }
+                ]
+            },
+        },
+        package / "apm.yml",
+    )
+    project = isolated.work_root / "consumer"
+    project.mkdir()
+    package_ref = "../../packages/agent-config"
+    dump_yaml(
+        {
+            "name": "scoped-uninstall-consumer",
+            "version": "1.0.0",
+            "dependencies": {"apm": [package_ref]},
+        },
+        project / "apm.yml",
+    )
+    canonical, _legacy, _data_path = _intellij_paths(isolated)
+    canonical.parent.mkdir(parents=True)
+    original = (
+        b"{\n"
+        b"  // user-owned entry\n"
+        b'  "servers": {\n'
+        b'    "managed-server": {"type": "http", "url": "https://example.invalid/mcp"}\n'
+        b"  }\n"
+        b"}\n"
+    )
+    canonical.write_bytes(original)
+    environment = isolated.subprocess_env(overrides={"APM_NON_INTERACTIVE": "1"})
+    runner = _runner(apm_binary_path)
+
+    install = runner.run(
+        (
+            "install",
+            "--target",
+            "claude",
+            "--trust-transitive-mcp",
+            "--no-policy",
+        ),
+        scenario_id="scoped-uninstall-setup",
+        cwd=project,
+        env=environment,
+    )
+    assert install.returncode == 0, install.stderr + install.stdout
+
+    uninstall = runner.run(
+        ("uninstall", package_ref),
+        scenario_id="scoped-uninstall",
+        cwd=project,
+        env=environment,
+    )
+
+    assert uninstall.returncode == 0, uninstall.stderr + uninstall.stdout
+    assert canonical.read_bytes() == original
+    claude_config = json.loads((project / ".mcp.json").read_text(encoding="utf-8"))
+    assert "managed-server" not in claude_config["mcpServers"]
