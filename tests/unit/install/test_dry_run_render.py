@@ -6,6 +6,7 @@ orphan preview, dev_apm_deps, and the dry-run notice / success message.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -58,16 +59,20 @@ def _make_apm_dep(
     return dep
 
 
-def _make_mcp_dep(name: str = "my-server") -> MagicMock:
-    dep = MagicMock()
-    dep.__str__.return_value = name
-    return dep
+@dataclass(frozen=True)
+class _DisplayDependency:
+    name: str
+
+    def __str__(self) -> str:
+        return self.name
 
 
-def _make_lsp_dep(name: str = "pyright") -> MagicMock:
-    dep = MagicMock()
-    dep.__str__.return_value = name
-    return dep
+def _make_mcp_dep(name: str = "my-server") -> _DisplayDependency:
+    return _DisplayDependency(name)
+
+
+def _make_lsp_dep(name: str = "pyright") -> _DisplayDependency:
+    return _DisplayDependency(name)
 
 
 # ---------------------------------------------------------------------------
