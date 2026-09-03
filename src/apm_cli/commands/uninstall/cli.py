@@ -63,19 +63,11 @@ def _collect_deployed_cleanup_state(
     dependency_keys: set[str],
 ) -> tuple[set[str], dict[str, str]]:
     """Snapshot selected deployment paths and hashes before lockfile mutation."""
+    from ...core.deployment_ledger import DeploymentLedgerCodec
     from ...integration.base_integrator import BaseIntegrator
 
-    deployed_files: set[str] = set()
-    deployed_hashes: dict[str, str] = {}
-    for record in lockfile.deployment_ledger.records.values():
-        if record.content_hash and dependency_keys.intersection(record.owners):
-            deployed_hashes.setdefault(record.locator.value, record.content_hash)
-    for dep_key, dependency in lockfile.dependencies.items():
-        if dep_key not in dependency_keys:
-            continue
-        deployed_files.update(dependency.deployed_files)
-        deployed_hashes.update(dependency.deployed_file_hashes)
-    return BaseIntegrator.normalize_managed_files(deployed_files) or set(), deployed_hashes
+    snapshot = DeploymentLedgerCodec.cleanup_snapshot(lockfile, dependency_keys)
+    return BaseIntegrator.normalize_managed_files(snapshot.paths) or set(), snapshot.hashes
 
 
 def _prepare_dependency_sections(data: dict) -> tuple[bool, list, list, list]:
@@ -502,10 +494,13 @@ def uninstall(ctx, packages, dry_run, verbose, global_):
             # silently. Previously a bare `except: pass` here masked
             # Windows-only failures where the DB row was never deleted on
             # `apm uninstall --target copilot-app`.
-            logger.warning(f"Integration cleanup failed: {type(_sync_err).__name__}: {_sync_err}")
-            logger.warning("Run 'apm install --force' to resync remaining integrations.")
+            logger.warning("Integration cleanup did not finish.")
+            logger.warning("Run 'apm install' to resync remaining integrations.")
             # Preserve the traceback under verbose for diagnosing
             # platform-specific failures without spamming default output.
+            logger.verbose_detail(
+                f"Integration cleanup failed: {type(_sync_err).__name__}: {_sync_err}"
+            )
             logger.verbose_detail(traceback.format_exc().rstrip())
 
         if lockfile:

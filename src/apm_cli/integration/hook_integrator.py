@@ -1898,53 +1898,30 @@ class HookIntegrator(BaseIntegrator):
             from apm_cli.utils.diagnostics import DiagnosticCollector
 
             cleanup_paths: set[str] = set()
-            final_symlinks: list[tuple[str, Path]] = []
-            resolved_project_root = project_root.resolve()
             for rel_path in managed_files:
                 normalized = rel_path.replace("\\", "/")
                 if not normalized.startswith(hook_prefix_tuple):
                     continue
-                target_file = project_root / rel_path
-                if not target_file.is_symlink():
-                    cleanup_paths.add(normalized)
-                    continue
-                if not self.validate_deploy_path(
-                    normalized,
-                    project_root,
-                    allowed_prefixes=hook_prefix_tuple,
-                    targets=guard_targets,
-                    resolved_project_root=resolved_project_root,
-                    allow_final_symlink=True,
-                ):
-                    stats["errors"] += 1
-                    stats.setdefault("unsafe_paths", []).append(normalized)
-                    stats.setdefault("failed_paths", []).append(normalized)
-                    continue
-                final_symlinks.append((normalized, target_file))
+                cleanup_paths.add(normalized)
 
+            cleanup_diagnostics = DiagnosticCollector()
             cleanup = remove_stale_deployed_files(
                 cleanup_paths,
                 project_root,
                 dep_key="<uninstall hooks>",
                 targets=guard_targets,
-                diagnostics=DiagnosticCollector(),
+                diagnostics=cleanup_diagnostics,
                 recorded_hashes=managed_file_hashes,
+                failed_path_retained=False,
+                allow_final_symlink=True,
             )
+            cleanup_diagnostics.render_summary()
             stats["files_removed"] += len(cleanup.deleted)
             retained = cleanup.retained
             if retained:
                 stats["errors"] += len(retained)
                 stats.setdefault("failed_paths", []).extend(retained)
             stats.setdefault("unsafe_paths", []).extend(cleanup.skipped_unmanaged)
-
-            for normalized, target_file in final_symlinks:
-                try:
-                    target_file.unlink()
-                    stats["files_removed"] += 1
-                    cleanup.deleted_targets.append(target_file)
-                except Exception:
-                    stats["errors"] += 1
-                    stats.setdefault("failed_paths", []).append(normalized)
             self.cleanup_empty_parents(cleanup.deleted_targets, stop_at=project_root)
         else:
             # Legacy fallback  -- glob for old -apm suffix files

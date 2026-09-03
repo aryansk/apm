@@ -6,6 +6,7 @@ import pytest
 from click.testing import CliRunner, Result
 
 from apm_cli.commands.uninstall.cli import uninstall
+from apm_cli.core.deployment_ledger import DeploymentLedgerCodec
 from apm_cli.core.deployment_state import (
     DeploymentLedger,
     DeploymentLocator,
@@ -123,3 +124,67 @@ def test_uninstall_preserves_hook_replaced_after_provenance_preflight(
 
     _assert_incomplete_cleanup(result, hook_file)
     assert hook_file.read_text(encoding="ascii") == user_content
+    assert "edited since APM deployed it" in result.output
+
+
+def test_uninstall_preserves_symlink_replaced_after_provenance_preflight(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A user symlink racing cleanup must pass through the provenance gate."""
+    package, hook_file = _prepare_hook_install(tmp_path)
+    outside_file = tmp_path / "user-hook.json"
+    user_content = '{"user": "outside"}\n'
+    outside_file.write_text(user_content, encoding="ascii")
+
+    def replace_hook_with_symlink(*_args, **_kwargs) -> int:
+        hook_file.parent.mkdir(parents=True, exist_ok=True)
+        hook_file.symlink_to(outside_file)
+        return 0
+
+    monkeypatch.setattr(
+        "apm_cli.commands.uninstall.cli._remove_packages_from_disk",
+        replace_hook_with_symlink,
+    )
+    monkeypatch.chdir(tmp_path)
+
+    result = CliRunner().invoke(uninstall, [package])
+
+    _assert_incomplete_cleanup(result, hook_file)
+    assert hook_file.is_symlink()
+    assert outside_file.read_text(encoding="ascii") == user_content
+    assert "edited since APM deployed it" in result.output
+
+
+def test_cleanup_snapshot_prefers_canonical_ledger_hash() -> None:
+    """Divergent compatibility hashes cannot override canonical provenance."""
+    hook_path = ".github/hooks/installed-hooks.json"
+    dependency = LockedDependency(
+        repo_url="owner/installed",
+        deployed_files=[hook_path],
+        deployed_file_hashes={hook_path: "sha256:legacy"},
+    )
+    dependency_key = dependency.get_unique_key()
+    locator = DeploymentLocator(
+        kind=LocatorKind.PROJECT_RELATIVE,
+        target="copilot",
+        value=hook_path,
+        runtime=None,
+        scope="project",
+    )
+    record = DeploymentRecord(
+        locator=locator,
+        owners=(dependency_key,),
+        active_owner=dependency_key,
+        content_hash="sha256:canonical",
+    )
+    lockfile = LockFile(
+        dependencies={dependency_key: dependency},
+        deployment_ledger=DeploymentLedger(records={locator.key: record}),
+        _deployments_present=True,
+    )
+
+    snapshot = DeploymentLedgerCodec.cleanup_snapshot(lockfile, {dependency_key})
+
+    assert snapshot.paths == frozenset({hook_path})
+    assert snapshot.hashes == {hook_path: "sha256:canonical"}
