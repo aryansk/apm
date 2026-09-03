@@ -803,3 +803,54 @@ def test_uninstall_treats_explicit_empty_ownership_as_noop(
 
     assert uninstall.returncode == 0, uninstall.stderr + uninstall.stdout
     assert canonical.read_bytes() == original
+
+
+def test_install_without_mcp_respects_explicit_empty_ownership(
+    tmp_path: Path,
+    apm_binary_path: Path,
+) -> None:
+    """A zero-MCP install never cleans targets when ownership is explicitly empty."""
+    isolated = _create_environment(tmp_path, "explicit-empty-reinstall")
+    package = isolated.package_root / "agent-config"
+    package.mkdir()
+    _write_mcp_package(package)
+    project = isolated.work_root / "consumer"
+    project.mkdir()
+    package_ref = "../../packages/agent-config"
+    _write_consumer(project, package_ref, "explicit-empty-reinstall-consumer")
+    environment = isolated.subprocess_env(overrides={"APM_NON_INTERACTIVE": "1"})
+    runner = _runner(apm_binary_path)
+    install_args = (
+        "install",
+        "--target",
+        "intellij",
+        "--trust-transitive-mcp",
+        "--no-policy",
+    )
+    initial_install = runner.run(
+        install_args,
+        scenario_id="explicit-empty-reinstall-setup",
+        cwd=project,
+        env=environment,
+    )
+    assert initial_install.returncode == 0, initial_install.stderr + initial_install.stdout
+    lock_path = project / "apm.lock.yaml"
+    explicit_empty_lock = load_yaml(lock_path)
+    explicit_empty_lock["mcp_target_servers"] = {}
+    dump_yaml(explicit_empty_lock, lock_path)
+    dump_yaml(
+        {"name": "explicit-empty-reinstall-consumer", "version": "1.0.0"},
+        project / "apm.yml",
+    )
+    canonical, _legacy, _data_path = _intellij_paths(isolated)
+    original = canonical.read_bytes()
+
+    reinstall = runner.run(
+        install_args,
+        scenario_id="explicit-empty-reinstall",
+        cwd=project,
+        env=environment,
+    )
+
+    assert reinstall.returncode == 0, reinstall.stderr + reinstall.stdout
+    assert canonical.read_bytes() == original
