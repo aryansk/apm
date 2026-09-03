@@ -50,6 +50,7 @@ def test_global_dry_run_command_leaves_absent_home_state_uncreated(tmp_path: Pat
         )
 
     assert result.exit_code == 0
+    assert "Previewing user-scope install" in result.output
     assert captured["validation_manifest_path"] != user_manifest
     assert captured["install_manifest_path"] != user_manifest
     assert captured["install_manifest_display"] == str(user_manifest)

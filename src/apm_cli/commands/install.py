@@ -773,7 +773,9 @@ def _prepare_user_scope_for_install(
     """Prepare user-scope install paths unless the invocation is read-only."""
     if not dry_run:
         ensure_user_dirs()
-    logger.progress("Installing to user scope (~/.apm/)")
+        logger.progress("Installing to user scope (~/.apm/)")
+    else:
+        logger.progress("Previewing user-scope install (~/.apm/)")
     if scope_warning := warn_unsupported_user_scope():
         logger.warning(scope_warning)
 
