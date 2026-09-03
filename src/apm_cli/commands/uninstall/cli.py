@@ -38,21 +38,23 @@ def _report_uninstall_outcome(
     lsp_cleanup_error: Exception | None,
 ) -> bool:
     """Render the final summary and return whether cleanup was incomplete."""
-    integration_incomplete = (
-        not integration_cleanup.complete or integration_cleanup_error is not None
-    )
+    integration_incomplete = not integration_cleanup.complete
     if (
         mcp_cleanup_error is None
         and lsp_cleanup_error is None
         and not integration_incomplete
     ):
-        logger.success("Uninstall complete: " + ", ".join(summary_lines))
+        if integration_cleanup_error is None:
+            logger.success("Uninstall complete: " + ", ".join(summary_lines))
+        else:
+            logger.warning("Package removal finished, but integration cleanup is incomplete.")
     elif integration_incomplete:
         logger.warning("Package removal finished, but managed hook cleanup is incomplete.")
     return (
         mcp_cleanup_error is not None
         or lsp_cleanup_error is not None
         or integration_incomplete
+        or integration_cleanup_error is not None
     )
 
 
@@ -483,12 +485,10 @@ def uninstall(ctx, packages, dry_run, verbose, global_):
             # Windows-only failures where the DB row was never deleted on
             # `apm uninstall --target copilot-app`.
             logger.warning(f"Integration cleanup failed: {type(_sync_err).__name__}: {_sync_err}")
+            logger.warning("Run 'apm install --force' to resync remaining integrations.")
             # Preserve the traceback under verbose for diagnosing
             # platform-specific failures without spamming default output.
             logger.verbose_detail(traceback.format_exc().rstrip())
-            logger.verbose_detail(
-                "Some integrated files may remain. Run `apm install --force` to resync."
-            )
 
         if lockfile:
             try:
