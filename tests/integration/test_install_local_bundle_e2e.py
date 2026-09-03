@@ -607,6 +607,36 @@ class TestInstallLocalBundleDryRun:
         # Lockfile must not be created on dry-run.
         assert not (project / "apm.lock.yaml").exists()
 
+    def test_global_dry_run_all_targets_does_not_create_user_config(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Global local-bundle dry-run keeps target-gate config reads read-only."""
+        bundle = _make_plugin_bundle(tmp_path / "src")
+        project = _make_project(tmp_path / "dst")
+        fake_home = tmp_path / "home"
+        fake_home.mkdir()
+        config_dir = fake_home / ".apm"
+        config_file = config_dir / "config.json"
+
+        monkeypatch.setattr(Path, "home", staticmethod(lambda: fake_home))
+        monkeypatch.setattr("apm_cli.config.CONFIG_DIR", str(config_dir))
+        monkeypatch.setattr("apm_cli.config.CONFIG_FILE", str(config_file))
+        monkeypatch.setattr("apm_cli.config._config_cache", None)
+
+        result = _invoke_install(
+            project,
+            str(bundle),
+            "--global",
+            "--target",
+            "all",
+            "--dry-run",
+            monkeypatch=monkeypatch,
+        )
+
+        assert result.exit_code == 0, f"stdout={result.output!r}\nstderr={result.stderr!r}"
+        assert not config_file.exists()
+        assert not config_dir.exists()
+
 
 @pytest.mark.lifecycle_smoke
 @pytest.mark.parametrize("archive", (False, True), ids=("directory", "archive"))

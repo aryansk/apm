@@ -570,6 +570,7 @@ def _validate_and_add_packages_to_apm_yml(
     skill_subset=None,
     skill_subset_from_cli=False,
     create_config=True,
+    manifest_display=None,
 ):
     """Validate packages exist and can be accessed, then add to apm.yml dependencies section.
 
@@ -674,7 +675,10 @@ def _validate_and_add_packages_to_apm_yml(
         if dry_run:
             if logger:
                 if dependencies_changed:
-                    logger.progress("Dry run: Would update dependency entries in apm.yml")
+                    logger.progress(
+                        "Dry run: Would update dependency entries in "
+                        f"{manifest_display or APM_YML_FILENAME}"
+                    )
                 else:
                     logger.progress("No new packages to add")
         # If all packages already exist in apm.yml, that's OK - we'll reinstall them.
@@ -694,7 +698,12 @@ def _validate_and_add_packages_to_apm_yml(
 
     if dry_run:
         if logger:
-            logger.progress(f"Dry run: Would add {len(validated_packages)} package(s) to apm.yml")
+            package_label = "package" if len(validated_packages) == 1 else "packages"
+            logger.progress(
+                "Dry run: Would add "
+                f"{len(validated_packages)} {package_label} to "
+                f"{manifest_display or APM_YML_FILENAME}"
+            )
             for pkg in validated_packages:
                 logger.verbose_detail(f"  + {pkg}")
         return validated_packages, outcome
@@ -1235,6 +1244,8 @@ def install(  # noqa: PLR0913
 
             legacy_skill_paths = should_use_legacy_skill_paths()
 
+        create_user_config = not (dry_run and global_)
+
         if len(packages) == 1 and not mcp_name and (_probe := Path(packages[0])).exists():
             from ..bundle.local_bundle import detect_local_bundle as _detect_lb
 
@@ -1270,6 +1281,7 @@ def install(  # noqa: PLR0913
                     logger=logger,
                     legacy_skill_paths=legacy_skill_paths,
                     allow_executables=_allow_execs_for_bundle,
+                    create_config=create_user_config,
                     # Rejected-flag context for consolidated UsageError:
                     rejected_flags={
                         "--update": update,
@@ -1393,8 +1405,6 @@ def install(  # noqa: PLR0913
             summary_rendered = True
             return
 
-        create_user_config = not (dry_run and global_)
-
         # Resolve transport selection inputs.
         from ..deps.transport_selection import (
             ProtocolPreference,
@@ -1515,6 +1525,7 @@ def install(  # noqa: PLR0913
                 skill_subset=_skill_subset,
                 skill_subset_from_cli=bool(skill_names),
                 create_config=create_user_config,
+                manifest_display=manifest_display,
             )
             transaction.record_validation(outcome)
             command_result = transaction.validation_result()

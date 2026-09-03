@@ -1,11 +1,14 @@
 from pathlib import Path
 from typing import Any
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from click.testing import CliRunner
 
 from apm_cli.cli import cli
-from apm_cli.commands.install import _prepare_dry_run_manifest_path
+from apm_cli.commands.install import (
+    _prepare_dry_run_manifest_path,
+    _validate_and_add_packages_to_apm_yml,
+)
 from apm_cli.core.command_logger import _ValidationOutcome
 from apm_cli.install.registry_wiring import get_effective_default_registry
 from apm_cli.models.apm_package import APMPackage
@@ -26,6 +29,7 @@ def test_global_dry_run_command_leaves_absent_home_state_uncreated(tmp_path: Pat
         **_kwargs: object,
     ) -> tuple[list[str], _ValidationOutcome]:
         captured["validation_manifest_path"] = manifest_path
+        captured["validation_manifest_display"] = _kwargs.get("manifest_display")
         assert packages == ("test/pkg",)
         assert dry_run is True
         return ["test/pkg"], outcome
@@ -54,6 +58,7 @@ def test_global_dry_run_command_leaves_absent_home_state_uncreated(tmp_path: Pat
     assert captured["validation_manifest_path"] != user_manifest
     assert captured["install_manifest_path"] != user_manifest
     assert captured["install_manifest_display"] == str(user_manifest)
+    assert captured["validation_manifest_display"] == str(user_manifest)
     assert not captured["validation_manifest_path"].parent.exists()
     assert not (fake_home / ".apm").exists()
 
@@ -134,3 +139,39 @@ def test_apm_package_preview_parse_does_not_create_missing_user_config(
     )
 
     assert not config_dir.exists()
+
+
+def test_global_dry_run_validation_summary_names_user_manifest(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    manifest = tmp_path / "preview" / "apm.yml"
+    manifest.parent.mkdir()
+    manifest.write_text("name: preview\nversion: 1.0.0\n", encoding="utf-8")
+    user_manifest = tmp_path / "home" / ".apm" / "apm.yml"
+    logger = MagicMock()
+    logger.validation_summary.return_value = True
+
+    def fake_resolve(*_args: object, **_kwargs: object) -> tuple:
+        return (
+            [("test/pkg", False)],
+            [],
+            ["test/pkg"],
+            None,
+            {"test/pkg": "test/pkg"},
+            True,
+        )
+
+    monkeypatch.setattr("apm_cli.commands.install._resolve_package_references", fake_resolve)
+
+    validated, _outcome = _validate_and_add_packages_to_apm_yml(
+        ("test/pkg",),
+        dry_run=True,
+        logger=logger,
+        manifest_path=manifest,
+        manifest_display=str(user_manifest),
+        create_config=False,
+    )
+
+    assert validated == ["test/pkg"]
+    logger.progress.assert_any_call(f"Dry run: Would add 1 package to {user_manifest}")

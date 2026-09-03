@@ -48,6 +48,7 @@ def install_local_bundle(
     legacy_skill_paths: bool = False,
     rejected_flags: dict[str, object],
     allow_executables: dict | None = None,
+    create_config: bool = True,
 ) -> None:
     """Deploy a local bundle into project / user scope.
 
@@ -101,6 +102,7 @@ def install_local_bundle(
             project_root,
             user_scope=global_,
             explicit_target=explicit,
+            create_config=create_config,
         )
         from .target_hints import emit_disabled_experimental_target_hint
 
@@ -108,7 +110,12 @@ def install_local_bundle(
         disabled_requested = [
             requested_target
             for requested_target in requested
-            if emit_disabled_experimental_target_hint(requested_target, targets, logger)
+            if emit_disabled_experimental_target_hint(
+                requested_target,
+                targets,
+                logger,
+                create_config=create_config,
+            )
         ]
 
         if not targets:
@@ -256,6 +263,7 @@ def install_local_bundle(
             alias=alias,
             allow_executables=allow_executables,
             approval_key=bundle_approval_key,
+            create_config=create_config,
         )
 
         deployed = result.get("deployed_files", [])
