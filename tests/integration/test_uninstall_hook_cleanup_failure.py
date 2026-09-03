@@ -20,13 +20,17 @@ from apm_cli.utils.yaml_io import dump_yaml
 pytestmark = pytest.mark.component
 
 
-def _prepare_hook_install(tmp_path: Path) -> tuple[str, Path]:
+def _prepare_hook_install(
+    tmp_path: Path,
+    *,
+    hook_content: str = '{"version": 1}\n',
+) -> tuple[str, Path]:
     """Create one lock-backed Copilot hook installation."""
     package = "owner/installed"
     hook_path = ".github/hooks/installed-hooks.json"
     hook_file = tmp_path / hook_path
     hook_file.parent.mkdir(parents=True)
-    hook_file.write_text('{"version": 1}\n', encoding="ascii")
+    hook_file.write_text(hook_content, encoding="ascii")
     dump_yaml(
         {
             "name": "hook-cleanup-failure",
@@ -132,7 +136,7 @@ def test_uninstall_preserves_symlink_replaced_after_provenance_preflight(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A user symlink racing cleanup must pass through the provenance gate."""
-    package, hook_file = _prepare_hook_install(tmp_path)
+    package, hook_file = _prepare_hook_install(tmp_path, hook_content="")
     outside_file = tmp_path / "user-hook.json"
     user_content = '{"user": "outside"}\n'
     outside_file.write_text(user_content, encoding="ascii")
@@ -153,7 +157,32 @@ def test_uninstall_preserves_symlink_replaced_after_provenance_preflight(
     _assert_incomplete_cleanup(result, hook_file)
     assert hook_file.is_symlink()
     assert outside_file.read_text(encoding="ascii") == user_content
-    assert "edited since APM deployed it" in result.output
+    assert "replaced by a symlink" in result.output
+
+
+def test_uninstall_reports_integration_cleanup_exception_nonzero(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An integration exception is actionable and never reports success."""
+    package, _hook_file = _prepare_hook_install(tmp_path)
+
+    def fail_integration_cleanup(*_args, **_kwargs) -> None:
+        raise OSError("sensitive internal detail")
+
+    monkeypatch.setattr(
+        "apm_cli.commands.uninstall.cli._sync_integrations_after_uninstall",
+        fail_integration_cleanup,
+    )
+    monkeypatch.chdir(tmp_path)
+
+    result = CliRunner().invoke(uninstall, [package])
+
+    assert result.exit_code == 1
+    assert "Integration cleanup did not finish" in result.output
+    assert "Run 'apm install' to resync remaining integrations" in result.output
+    assert "sensitive internal detail" not in result.output
+    assert "Uninstall complete" not in result.output
 
 
 def test_cleanup_snapshot_prefers_canonical_ledger_hash() -> None:

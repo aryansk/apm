@@ -428,6 +428,17 @@ def remove_stale_deployed_files(
         # etc.) we keep it rather than risk destroying user work.
         expected_hash = recorded_hashes.get(stale_path)
         if expected_hash:
+            if allow_final_symlink and stale_target.is_symlink():
+                result.skipped_user_edit.append(stale_path)
+                diagnostics.warn(
+                    (
+                        f"Skipped removing {stale_path}: the deployed file was "
+                        "replaced by a symlink. Inspect the link and delete it "
+                        "manually if no longer needed."
+                    ),
+                    package=dep_key,
+                )
+                continue
             try:
                 from ..utils.content_hash import compute_file_hash
 
