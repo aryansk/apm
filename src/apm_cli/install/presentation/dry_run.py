@@ -49,7 +49,7 @@ def render_and_exit(
             logger.progress(f"  - {dep}")
 
     if plan.selected_lsp_dependencies:
-        logger.progress(f"LSP dependencies ({len(plan.selected_lsp_dependencies)}):")
+        logger.progress(f"LSP dependencies ({plan.lsp_dependency_count}):")
         for dep in plan.selected_lsp_dependencies:
             logger.progress(f"  - {dep}")
 

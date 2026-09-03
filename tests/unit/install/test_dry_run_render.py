@@ -60,13 +60,13 @@ def _make_apm_dep(
 
 def _make_mcp_dep(name: str = "my-server") -> MagicMock:
     dep = MagicMock()
-    dep.__str__ = lambda self: name
+    dep.__str__.return_value = name
     return dep
 
 
 def _make_lsp_dep(name: str = "pyright") -> MagicMock:
     dep = MagicMock()
-    dep.__str__ = lambda self: name
+    dep.__str__.return_value = name
     return dep
 
 
