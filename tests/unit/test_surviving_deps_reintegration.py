@@ -117,7 +117,8 @@ def test_uninstall_warns_when_managed_hook_fails_containment(
 
     logger.warning.assert_called_once_with(
         "Skipped 1 managed hook path(s) that failed containment validation. "
-        "Remove them manually after review."
+        "Re-run with --verbose to list paths, then inspect or repair symlinked "
+        "parents before removing anything."
     )
     logger.verbose_detail.assert_any_call(
         "Skipped unsafe managed hook path: .copilot/hooks/pkg-hooks.json"
