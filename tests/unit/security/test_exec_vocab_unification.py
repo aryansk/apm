@@ -109,6 +109,27 @@ class TestReadBundleAllowExecutables:
             "test-plugin": {"canvas": True}
         }
 
+    def test_dry_run_bundle_read_does_not_migrate_legacy_user_approvals(
+        self, tmp_path, monkeypatch
+    ):
+        config = tmp_path / "config.json"
+        legacy = tmp_path / "approvals.yml"
+        monkeypatch.setattr(ex, "_user_config_file", lambda: config)
+        monkeypatch.setattr(ex, "_legacy_approvals_path", lambda: legacy)
+        manifest = tmp_path / "apm.yml"
+        manifest.write_text("executables:\n  allow: {}\n", encoding="utf-8")
+        legacy.write_text("owner/repo:\n  hooks: true\n", encoding="utf-8")
+
+        result = read_bundle_allow_executables(
+            manifest,
+            logger=None,
+            migrate_user_legacy=False,
+        )
+
+        assert result == {"owner/repo": {"hooks": True}}
+        assert legacy.exists()
+        assert not config.exists()
+
 
 class TestBuildExecTrustContext:
     def test_org_executables_block_enables_gate_fleetwide(self, tmp_path, monkeypatch):

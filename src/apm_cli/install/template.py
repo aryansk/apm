@@ -60,13 +60,14 @@ def _effective_allow(ctx) -> dict | None:
         return getattr(ctx, "exec_allow_map", None)
 
     policy = getattr(getattr(ctx, "policy_fetch", None), "policy", None)
-    project_root = getattr(ctx, "project_root", None)
+    project_root = getattr(ctx, "source_root", None) or getattr(ctx, "project_root", None)
     project_allow = getattr(getattr(ctx, "apm_package", None), "allow_executables", None)
     trust_ctx = exec_trust_context_for_project(
         project_root,
         policy=policy,
         fallback_allow_executables=project_allow,
         logger=getattr(ctx, "logger", None),
+        migrate_user_legacy=not getattr(ctx, "dry_run", False),
     )
     allow_map = materialize_exec_map(trust_ctx)
     # Cache the resolved context and allow map once per install so each

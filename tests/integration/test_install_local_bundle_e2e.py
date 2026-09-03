@@ -645,17 +645,27 @@ class TestInstallLocalBundleDryRun:
         project = _make_project(tmp_path / "source")
         deploy_root = tmp_path / "deploy"
         deploy_root.mkdir()
-        captured: dict[str, Path] = {}
+        captured: dict[str, object] = {}
 
-        def fake_read_allow(apm_yml_path: Path, _logger: object) -> dict | None:
-            captured["allow_manifest"] = apm_yml_path
+        def fake_effective_allow(
+            project_root: Path,
+            *,
+            no_policy: bool,
+            logger: object,
+            migrate_user_legacy: bool = True,
+        ) -> dict | None:
+            captured["project_root"] = project_root
+            captured["migrate_user_legacy"] = migrate_user_legacy
             return {}
 
         def fake_install_local_bundle(**_kwargs: object) -> None:
             return None
 
         with (
-            patch("apm_cli.security.executables.read_bundle_allow_executables", fake_read_allow),
+            patch(
+                "apm_cli.install.local_bundle_handler.effective_bundle_allow_map",
+                fake_effective_allow,
+            ),
             patch(
                 "apm_cli.install.local_bundle_handler.install_local_bundle",
                 fake_install_local_bundle,
@@ -671,7 +681,8 @@ class TestInstallLocalBundleDryRun:
             )
 
         assert result.exit_code == 0, f"stdout={result.output!r}\nstderr={result.stderr!r}"
-        assert captured["allow_manifest"] == project / "apm.yml"
+        assert captured["project_root"] == project
+        assert captured["migrate_user_legacy"] is False
 
 
 @pytest.mark.lifecycle_smoke

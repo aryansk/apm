@@ -986,6 +986,7 @@ def resolve_manifest_target_decision(
     manifest_path: Path,
     explicit_target: str | list[str] | None,
     user_scope: bool = False,
+    create_config: bool = True,
 ) -> EffectiveTargetDecision:
     """Resolve one effective target decision from an optional manifest path."""
     package = None
@@ -998,6 +999,7 @@ def resolve_manifest_target_decision(
         package=package,
         explicit_target=explicit_target,
         user_scope=user_scope,
+        create_config=create_config,
     )
 
 

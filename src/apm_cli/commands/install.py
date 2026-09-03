@@ -64,7 +64,7 @@ from apm_cli.install.insecure_policy import (
     _guard_transitive_insecure_dependencies,  # noqa: F401 -- re-exported; test_architecture_invariants checks importability
     _InsecureDependencyInfo,  # noqa: F401 -- re-exported; test_architecture_invariants checks importability
 )
-from apm_cli.install.locking import serialized_lifecycle
+from apm_cli.install.locking import serialized_lifecycle_unless
 
 # Re-export MCP add/build helpers under their underscore-prefixed legacy
 # names. Aliases live in mcp/writer.py and mcp/entry.py respectively.
@@ -761,6 +761,7 @@ def _handle_mcp_install(  # noqa: PLR0913
         validated_registry_url,
         logger=logger,
         announce=logger.dry_run,
+        create_config=not logger.dry_run,
     )
     integration_registry_url = resolved_registry_url
     mcp_manifest_path = get_manifest_path(scope)
@@ -772,6 +773,7 @@ def _handle_mcp_install(  # noqa: PLR0913
         manifest_path=mcp_manifest_path,
         explicit_target=target or runtime,
         user_scope=is_user_scope(scope),
+        create_config=not logger.dry_run,
     )
     if is_user_scope(scope):
         from ..core.target_detection import EffectiveTargetDecision
@@ -1124,7 +1126,7 @@ def _handle_mcp_install(  # noqa: PLR0913
     ),
 )
 @click.pass_context
-@serialized_lifecycle
+@serialized_lifecycle_unless("dry_run")
 def install(  # noqa: PLR0913
     ctx,
     packages,
@@ -1244,7 +1246,7 @@ def install(  # noqa: PLR0913
 
             legacy_skill_paths = should_use_legacy_skill_paths()
 
-        create_user_config = not (dry_run and global_)
+        create_user_config = not dry_run
 
         if len(packages) == 1 and not mcp_name and (_probe := Path(packages[0])).exists():
             from ..bundle.local_bundle import detect_local_bundle as _detect_lb
@@ -1267,6 +1269,7 @@ def install(  # noqa: PLR0913
                     _bundle_project_root,
                     no_policy=no_policy,
                     logger=logger,
+                    migrate_user_legacy=not dry_run,
                 )
                 _install_lb(
                     bundle_info=_bundle_info,
@@ -1478,6 +1481,7 @@ def install(  # noqa: PLR0913
             apm_modules_dir=get_modules_dir(scope),
             validation=None,
             logger=logger,
+            acquire_lock=not dry_run,
         )
 
         if not apm_yml_exists and packages:
@@ -2043,15 +2047,6 @@ def _post_install_summary(
 # ---------------------------------------------------------------------------
 # Install engine
 # ---------------------------------------------------------------------------
-
-
-# Re-exports for backward compatibility -- the real implementations live
-# in apm_cli.install.services (P1 -- DI seam).  Tests that
-# @patch("apm_cli.commands.install._integrate_package_primitives") still
-# work because patching this module-level alias rebinds the name where
-# call-sites in this module would look it up.  Tests inside this codebase
-# now patch the canonical apm_cli.install.services._integrate_package_primitives
-# directly to avoid relying on transitive aliasing.
 
 
 # ---------------------------------------------------------------------------

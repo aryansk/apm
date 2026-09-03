@@ -77,6 +77,7 @@ def get_config_if_exists() -> dict:
         _config_cache = json.load(f)
     return _config_cache
 
+
 def _resolve_create_config(
     *,
     bootstrap: bool | None = None,
@@ -338,7 +339,16 @@ def get_allow_protocol_fallback(
     bootstrap: bool | None = None,
     create_config: bool | None = None,
 ) -> bool:
-    return get_config(
+    """Get the allow-protocol-fallback setting.
+
+    Args:
+        bootstrap: Legacy name for whether to create a missing user config file.
+        create_config: When false, do not create a missing user config file.
+
+    Returns:
+        bool: Whether cross-protocol fallback is enabled (default: False).
+    """
+    return get_config(
         create=_resolve_create_config(bootstrap=bootstrap, create_config=create_config)
     ).get("allow_protocol_fallback", False)
 
@@ -357,7 +367,16 @@ def get_prefer_ssh(
     bootstrap: bool | None = None,
     create_config: bool | None = None,
 ) -> bool:
-    return get_config(
+    """Get the prefer-ssh transport preference setting.
+
+    Args:
+        bootstrap: Legacy name for whether to create a missing user config file.
+        create_config: When false, do not create a missing user config file.
+
+    Returns:
+        bool: Whether SSH is preferred for shorthand dependencies (default: False).
+    """
+    return get_config(
         create=_resolve_create_config(bootstrap=bootstrap, create_config=create_config)
     ).get("prefer_ssh", False)
 
@@ -420,7 +439,22 @@ def get_apm_allow_protocol_fallback(
     bootstrap: bool | None = None,
     create_config: bool | None = None,
 ) -> bool:
-    should_create = _resolve_create_config(bootstrap=bootstrap, create_config=create_config)
+    """Return the effective allow-protocol-fallback flag.
+
+    Resolution order:
+      1. ``APM_ALLOW_PROTOCOL_FALLBACK`` environment variable
+         (``"1"``/``"true"``/``"yes"``/``"on"`` => True;
+          ``"0"``/``"false"``/``"no"``/``"off"`` => False)
+      2. ``allow_protocol_fallback`` value from ``~/.apm/config.json``
+      3. ``False`` (default)
+
+    Returns:
+        ``True`` when cross-protocol fallback is enabled, otherwise ``False``.
+    """
+    env_value = _parse_allow_protocol_fallback_env(os.environ.get(_ENV_ALLOW_PROTOCOL_FALLBACK))
+    if env_value is not None:
+        return env_value
+    should_create = _resolve_create_config(bootstrap=bootstrap, create_config=create_config)
     return get_allow_protocol_fallback(create_config=should_create)
 
 
@@ -837,16 +871,18 @@ def _validate_mcp_registry_url(url: str) -> str:
     return normalized
 
 
-def get_mcp_registry_url() -> str | None:
+def get_mcp_registry_url(*, create_config: bool = False) -> str | None:
     """Return the user-configured MCP registry URL, or None if not set.
 
-    Reads without materialising ``~/.apm/config.json``: registry resolution now
-    runs on every MCP client construction, including preview-only paths, and a
-    lookup that answers "not set" must not leave state behind to say so.
+    Reads avoid materialising ``~/.apm/config.json`` by default: registry
+    resolution runs on every MCP client construction, including preview-only
+    paths, and a lookup that answers "not set" must not leave state behind to
+    say so. Passing ``create_config=True`` preserves the legacy bootstrapping
+    behavior for callers that intentionally materialise user config.
     """
-    if _config_cache is None and not os.path.exists(CONFIG_FILE):
+    if _config_cache is None and not create_config and not os.path.exists(CONFIG_FILE):
         return None
-    return get_config().get(_MCP_REGISTRY_URL_KEY)
+    return get_config(create=create_config).get(_MCP_REGISTRY_URL_KEY)
 
 
 def set_mcp_registry_url(url: str) -> None:

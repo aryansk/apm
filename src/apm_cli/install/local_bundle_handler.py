@@ -491,6 +491,7 @@ def effective_bundle_allow_map(
     *,
     no_policy: bool,
     logger: Any,
+    migrate_user_legacy: bool = True,
 ) -> dict[str, dict[str, bool]] | None:
     """Resolve local-bundle trust through the canonical project owner."""
     from ..security.executables import effective_exec_map_for_project
@@ -508,6 +509,7 @@ def effective_bundle_allow_map(
         project_root,
         policy=policy,
         logger=logger,
+        migrate_user_legacy=migrate_user_legacy,
     )
 
 
