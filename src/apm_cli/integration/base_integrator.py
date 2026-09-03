@@ -503,6 +503,7 @@ class BaseIntegrator:
         user_scope: bool = False,
         *,
         resolved_project_root: Path | None = None,
+        allow_final_symlink: bool = False,
     ) -> bool:
         """Return True if *rel_path* is safe for APM to deploy or remove.
 
@@ -512,8 +513,8 @@ class BaseIntegrator:
         When *targets* is provided, allowed prefixes are derived from
         those (scope-resolved) profiles.  Otherwise uses all known
         project prefixes, plus known user roots when *user_scope* is true.
-        Callers validating multiple paths may pass precomputed
-        *allowed_prefixes* and *resolved_project_root*.
+        Callers validating multiple paths may pass precomputed values.
+        Set *allow_final_symlink* only when unlinking the final path itself.
 
         Checks:
         1. No path-traversal components (``..``)
@@ -561,7 +562,8 @@ class BaseIntegrator:
         target = project_root / rel_path
         try:
             root = resolved_project_root or project_root.resolve()
-            if not target.resolve().is_relative_to(root):
+            containment_target = target.parent if allow_final_symlink else target
+            if not containment_target.resolve().is_relative_to(root):
                 return False
         except (ValueError, OSError):
             return False

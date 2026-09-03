@@ -1896,7 +1896,6 @@ class HookIntegrator(BaseIntegrator):
         if managed_files is not None:
             # Manifest-based removal -- only remove tracked files
             deleted: list = []
-            allowed_prefixes = self._get_integration_prefixes(targets=guard_targets)
             resolved_project_root = project_root.resolve()
             for rel_path in managed_files:
                 normalized = rel_path.replace("\\", "/")
@@ -1905,9 +1904,10 @@ class HookIntegrator(BaseIntegrator):
                 if not self.validate_deploy_path(
                     normalized,
                     project_root,
-                    allowed_prefixes=allowed_prefixes,
+                    allowed_prefixes=hook_prefix_tuple,
                     targets=guard_targets,
                     resolved_project_root=resolved_project_root,
+                    allow_final_symlink=True,
                 ):
                     continue
                 target_file = project_root / rel_path
