@@ -890,7 +890,7 @@ def _handle_mcp_install(  # noqa: PLR0913
 @click.option(
     "--only",
     type=click.Choice(["apm", "mcp"]),
-    help="Install only specific dependency type",
+    help="Install only APM packages or MCP/LSP service dependencies",
 )
 @click.option(
     "--update",
@@ -1178,13 +1178,13 @@ def install(  # noqa: C901, PLR0913
 
     Detects AI runtimes from your apm.yml scripts and installs MCP servers for
     all detected runtimes; also installs APM package dependencies from GitHub.
-    --only filters by type (apm or mcp).
+    --only filters to APM packages or MCP/LSP service dependencies.
 
     Examples:
         apm install                             # Install existing deps from apm.yml
         apm install org/pkg1#1.0.0              # Add package to apm.yml and install
         apm install --exclude codex             # Install for all except Codex CLI
-        apm install --only=apm                  # Install only APM dependencies
+        apm install --only=apm                  # Install only APM packages
         apm install --update                    # Update dependencies to latest Git refs
         apm install --dry-run                   # Show what would be installed
         apm install -g org/pkg1                 # Install to user scope (~/.apm/)

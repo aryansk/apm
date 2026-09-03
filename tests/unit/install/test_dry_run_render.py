@@ -222,7 +222,7 @@ class TestRenderApmDeps:
             )
 
         all_calls = " ".join(str(c) for c in logger.progress.call_args_list)
-        assert "LSP dependencies" in all_calls
+        assert "LSP servers to configure" in all_calls
         assert "gopls" in all_calls
         assert "No dependencies" not in all_calls
 
@@ -244,9 +244,10 @@ class TestRenderApmDeps:
             )
 
         all_calls = " ".join(str(c) for c in logger.progress.call_args_list)
-        assert "LSP dependencies" not in all_calls
+        assert "LSP servers to configure" not in all_calls
         assert "gopls" not in all_calls
-        assert "No dependencies" in all_calls
+        assert "No APM dependencies selected by --only=apm" in all_calls
+        assert "Drop --only to preview MCP/LSP dependencies" in all_calls
 
     def test_no_deps_shows_empty_message(self, tmp_path: Path) -> None:
         """When all dep lists are empty the 'No dependencies found' message is shown (line 53)."""

@@ -72,10 +72,10 @@ def test_lsp_only_dry_run_renders_server_through_install_command(
     result = CliRunner().invoke(cli, ["install", "--dry-run"])
 
     assert result.exit_code == 0, result.output
-    assert "LSP dependencies (1):" in result.output
+    assert "LSP servers to configure (1):" in result.output
     assert "pyright" in result.output
     assert "No dependencies found" not in result.output
-    assert "would install 1 LSP server" in result.output
+    assert "would configure 1 LSP server" in result.output
     assert not (tmp_path / "apm.lock.yaml").exists()
 
 
