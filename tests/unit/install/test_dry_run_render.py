@@ -121,6 +121,25 @@ class TestRenderApmDeps:
         assert plan.selected_apm_dependencies[0].source == "registry"
         assert plan.selected_apm_dependencies[0].registry_name == "private"
 
+    def test_plan_excludes_apm_selection_when_only_mcp_is_requested(self) -> None:
+        """The prospective plan does not leak APM work into --only=mcp previews."""
+        dep = DependencyReference.parse("owner/repo#main")
+        package = MagicMock()
+        package.get_apm_dependencies.return_value = [dep]
+        package.get_dev_apm_dependencies.return_value = []
+        package.get_all_mcp_dependencies.return_value = []
+        package.get_lsp_dependencies.return_value = []
+
+        plan = ProspectiveInstallPlan.from_apm_package(
+            package,
+            should_install_apm=False,
+            should_install_mcp=True,
+            only_packages=None,
+        )
+
+        assert plan.selected_apm_dependencies == ()
+        assert plan.apm_dependency_count == 0
+
     def test_apm_deps_install_action_shown(self, tmp_path: Path) -> None:
         """APM deps rendered with 'install' when update=False (lines 42-45)."""
         logger = _make_logger()
@@ -495,7 +514,7 @@ class TestDryRunNoticeAndSuccess:
         with patch("apm_cli.deps.lockfile.LockFile.read", side_effect=Exception):
             render_and_exit(
                 logger=logger,
-                should_install_apm=False,
+                should_install_apm=True,
                 apm_deps=[],
                 mcp_deps=[],
                 dev_apm_deps=[_make_apm_dep("owner/dev")],

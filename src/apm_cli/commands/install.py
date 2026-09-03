@@ -152,7 +152,6 @@ set = builtins.set
 list = builtins.list
 dict = builtins.dict
 
-
 # ---------------------------------------------------------------------------
 # InstallContext -- parameter bundle for the APM install pipeline
 # ---------------------------------------------------------------------------
@@ -897,7 +896,7 @@ def _handle_mcp_install(  # noqa: PLR0913
     is_flag=True,
     help="Update dependencies to latest Git references (deprecated: prefer 'apm update' for an interactive plan, or 'apm update --yes' for CI). Unlike --refresh, --update restructures the entire dependency graph.",
 )
-@click.option("--dry-run", is_flag=True, help="Show what would be installed without installing")
+@click.option("--dry-run", is_flag=True, help="Show what would change without writing files")
 @click.option(
     "--force",
     is_flag=True,
@@ -1186,7 +1185,7 @@ def install(  # noqa: C901, PLR0913
         apm install --exclude codex             # Install for all except Codex CLI
         apm install --only=apm                  # Install only APM packages
         apm install --update                    # Update dependencies to latest Git refs
-        apm install --dry-run                   # Show what would be installed
+        apm install --dry-run                   # Show what would change
         apm install -g org/pkg1                 # Install to user scope (~/.apm/)
         apm install --allow-insecure http://...  # HTTP URL (needs allow_insecure)
         apm install --skill my-skill org/bundle  # Install one skill from bundle
@@ -1791,6 +1790,7 @@ def _install_apm_packages(ctx, outcome):
             only_packages=ctx.only_packages,
             updated_packages=outcome.updated_packages if outcome is not None else (),
         )
+        prospective_plan = prospective_plan.with_allowed_lsp_dependencies(apm_package, logger)
         logger.record_dry_run_apm_updates(len(prospective_plan.updated_apm_identities))
         _check_insecure_dependencies(
             prospective_plan.selected_apm_dependencies,

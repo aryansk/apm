@@ -33,9 +33,11 @@ def render_and_exit(
 
     logger.progress("Dry run mode - showing what would change:")
 
-    if plan.should_install_apm and plan.selected_apm_dependencies:
+    selected_apm_dependencies = plan.selected_apm_dependencies if plan.should_install_apm else ()
+
+    if selected_apm_dependencies:
         logger.progress(f"APM dependencies ({plan.apm_dependency_count}):")
-        for dep in plan.selected_apm_dependencies:
+        for dep in selected_apm_dependencies:
             action = (
                 "update"
                 if update or dep.get_identity() in plan.updated_apm_identities
@@ -54,7 +56,7 @@ def render_and_exit(
             logger.progress(f"  - {dep}")
 
     if (
-        not plan.selected_apm_dependencies
+        not selected_apm_dependencies
         and not plan.selected_mcp_dependencies
         and not plan.selected_lsp_dependencies
     ):
@@ -97,7 +99,7 @@ def render_and_exit(
             if len(_orphan_preview) > 10:
                 logger.progress(f"  ... and {len(_orphan_preview) - 10} more")
 
-    if plan.selected_apm_dependencies:
+    if selected_apm_dependencies:
         logger.dry_run_notice(
             "Per-package stale-file cleanup (renames within a package) is "
             "not previewed -- it requires running integration. Run without "
