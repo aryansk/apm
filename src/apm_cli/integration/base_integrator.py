@@ -573,6 +573,13 @@ class BaseIntegrator:
             return False
         target = project_root / rel_path
         try:
+            lexical_parent = project_root
+            for part in candidate.parent.parts:
+                if part in ("", "."):
+                    continue
+                lexical_parent /= part
+                if lexical_parent.is_symlink():
+                    return False
             root = resolved_project_root or project_root.resolve()
             containment_target = target.parent if allow_final_symlink else target
             if not containment_target.resolve().is_relative_to(root):

@@ -753,6 +753,33 @@ class TestHookSync:
         assert stats["unsafe_paths"] == [".copilot/hooks/pkg-hooks.json"]
         assert outside_file.read_text(encoding="utf-8") == '{"outside": true}'
 
+    def test_sync_rejects_hook_root_redirect_within_project_root(self, tmp_path: Path):
+        """A user-root redirect must not become a valid managed hook root."""
+        project_root = tmp_path / "home"
+        redirected_hooks = project_root / "Documents" / "hooks"
+        redirected_hooks.mkdir(parents=True)
+        redirected_file = redirected_hooks / "pkg-hooks.json"
+        redirected_file.write_text('{"outside": true}', encoding="utf-8")
+        try:
+            (project_root / ".copilot").symlink_to(
+                redirected_hooks.parent,
+                target_is_directory=True,
+            )
+        except (NotImplementedError, OSError) as exc:
+            pytest.skip(f"symlink creation unavailable: {exc}")
+
+        target = KNOWN_TARGETS["copilot"].for_scope(user_scope=True)
+        stats = HookIntegrator().sync_integration(
+            None,
+            project_root,
+            managed_files={".copilot/hooks/pkg-hooks.json"},
+            targets=[target],
+        )
+
+        assert stats["files_removed"] == 0
+        assert stats["unsafe_paths"] == [".copilot/hooks/pkg-hooks.json"]
+        assert redirected_file.read_text(encoding="utf-8") == '{"outside": true}'
+
     @pytest.mark.parametrize("target_exists", [True, False])
     def test_sync_unlinks_final_managed_symlink_without_following_target(
         self,
