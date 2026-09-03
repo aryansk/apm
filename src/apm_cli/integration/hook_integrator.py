@@ -1877,19 +1877,13 @@ class HookIntegrator(BaseIntegrator):
         *managed_files* is ``None``. **Never** calls ``shutil.rmtree``.
         Also cleans APM entries from merged-hook JSON files via the
         ``_apm_source`` marker.
-
-        ``targets`` (#2250) scopes ONLY the merged-hook JSON cleanup below,
-        NOT the ``managed_files`` prefix guard (union of ``KNOWN_TARGETS``
-        + ``targets``): that guard defends against deleting outside a
-        recognized ``hooks/`` dir, and narrowing it would strand real
-        files deployed under a since-dropped target.
+        ``targets`` (#2250) scopes only the merged-hook JSON cleanup below.
+        The ``managed_files`` guard remains the union of ``KNOWN_TARGETS``
+        and ``targets`` so files from a since-dropped target are not stranded.
         """
         from .targets import KNOWN_TARGETS
 
         stats: dict[str, int] = {"files_removed": 0, "errors": 0}
-
-        # Prefix guard: union of KNOWN_TARGETS + caller `targets`, never
-        # narrower than the unscoped default -- see docstring above.
         guard_targets = list(KNOWN_TARGETS.values())
         if targets is not None:
             guard_targets = guard_targets + list(targets)
@@ -1899,15 +1893,22 @@ class HookIntegrator(BaseIntegrator):
             if t.supports("hooks")
         ]
         hook_prefix_tuple = tuple(dict.fromkeys(hook_prefixes))
-
         if managed_files is not None:
             # Manifest-based removal -- only remove tracked files
             deleted: list = []
+            allowed_prefixes = self._get_integration_prefixes(targets=guard_targets)
+            resolved_project_root = project_root.resolve()
             for rel_path in managed_files:
                 normalized = rel_path.replace("\\", "/")
                 if not normalized.startswith(hook_prefix_tuple):
                     continue
-                if ".." in rel_path:
+                if not self.validate_deploy_path(
+                    normalized,
+                    project_root,
+                    allowed_prefixes=allowed_prefixes,
+                    targets=guard_targets,
+                    resolved_project_root=resolved_project_root,
+                ):
                     continue
                 target_file = project_root / rel_path
                 if target_file.exists() and target_file.is_file():

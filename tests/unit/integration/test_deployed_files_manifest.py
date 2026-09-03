@@ -16,7 +16,7 @@ import json
 from datetime import datetime
 from pathlib import Path
 
-import pytest  # noqa: F401
+import pytest
 
 from apm_cli.deps.lockfile import LockedDependency, LockFile  # noqa: F401
 from apm_cli.integration.agent_integrator import AgentIntegrator
@@ -25,6 +25,7 @@ from apm_cli.integration.command_integrator import CommandIntegrator
 from apm_cli.integration.hook_integrator import HookIntegrator
 from apm_cli.integration.prompt_integrator import PromptIntegrator
 from apm_cli.integration.skill_integrator import SkillIntegrator
+from apm_cli.integration.targets import KNOWN_TARGETS
 from apm_cli.models.apm_package import (
     APMPackage,
     GitReferenceType,
@@ -722,6 +723,33 @@ class TestHookSync:
         stats = HookIntegrator().sync_integration(None, tmp_path, managed_files=managed)
         assert stats["files_removed"] == 0
         assert (prompts_dir / "a.prompt.md").exists()
+
+    def test_sync_rejects_symlinked_hook_root(self, tmp_path: Path):
+        """Managed hook cleanup must not follow a target-root symlink."""
+        project_root = tmp_path / "project"
+        project_root.mkdir()
+        outside_hooks = tmp_path / "outside" / "hooks"
+        outside_hooks.mkdir(parents=True)
+        outside_file = outside_hooks / "pkg-hooks.json"
+        outside_file.write_text('{"outside": true}', encoding="utf-8")
+        try:
+            (project_root / ".copilot").symlink_to(
+                outside_hooks.parent,
+                target_is_directory=True,
+            )
+        except (NotImplementedError, OSError) as exc:
+            pytest.skip(f"symlink creation unavailable: {exc}")
+
+        target = KNOWN_TARGETS["copilot"].for_scope(user_scope=True)
+        stats = HookIntegrator().sync_integration(
+            None,
+            project_root,
+            managed_files={".copilot/hooks/pkg-hooks.json"},
+            targets=[target],
+        )
+
+        assert stats["files_removed"] == 0
+        assert outside_file.read_text(encoding="utf-8") == '{"outside": true}'
 
 
 # ---------------------------------------------------------------------------

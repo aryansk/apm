@@ -501,6 +501,8 @@ class BaseIntegrator:
         allowed_prefixes: tuple | None = None,
         targets=None,
         user_scope: bool = False,
+        *,
+        resolved_project_root: Path | None = None,
     ) -> bool:
         """Return True if *rel_path* is safe for APM to deploy or remove.
 
@@ -510,6 +512,8 @@ class BaseIntegrator:
         When *targets* is provided, allowed prefixes are derived from
         those (scope-resolved) profiles.  Otherwise uses all known
         project prefixes, plus known user roots when *user_scope* is true.
+        Callers validating multiple paths may pass precomputed
+        *allowed_prefixes* and *resolved_project_root*.
 
         Checks:
         1. No path-traversal components (``..``)
@@ -556,7 +560,8 @@ class BaseIntegrator:
             return False
         target = project_root / rel_path
         try:
-            if not target.resolve().is_relative_to(project_root.resolve()):
+            root = resolved_project_root or project_root.resolve()
+            if not target.resolve().is_relative_to(root):
                 return False
         except (ValueError, OSError):
             return False
