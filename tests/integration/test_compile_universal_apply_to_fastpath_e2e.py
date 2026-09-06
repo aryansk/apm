@@ -280,11 +280,11 @@ def test_compile_does_not_re_resolve_context_optimizer_base_dir(
     original_file_matches = ContextOptimizer._file_matches_pattern
     original_minimal_placement = ContextOptimizer._find_minimal_coverage_placement
 
-    def spy_resolve(path: Path, *args, **kwargs) -> Path:
+    def spy_resolve(path: Path, strict: bool = False) -> Path:
         caller = sys._getframe(1).f_code.co_name
         if path == project_root:
             base_resolve_callers.append(caller)
-        return original_resolve(path, *args, **kwargs)
+        return original_resolve(path, strict=strict)
 
     def spy_file_matches(
         self: ContextOptimizer,
