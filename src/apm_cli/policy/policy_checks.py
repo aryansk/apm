@@ -1249,12 +1249,24 @@ def run_dependency_policy_checks(
         return result
     if _run(_check_dependency_denylist(deps_list, policy.dependencies)):
         return result
-    dep_names = {dep.get_canonical_dependency_string().split("#")[0] for dep in deps_list}
+    dep_names = None
+    if policy.dependencies.effective_require or (
+        policy.executables.require and lockfile is not None
+    ):
+        dep_names = {dep.get_canonical_dependency_string().split("#")[0] for dep in deps_list}
     if _run(_check_required_packages(deps_list, policy.dependencies, dep_names=dep_names)):
         return result
-    if _run(_check_required_packages_deployed(deps_list, lockfile, policy.dependencies, dep_names=dep_names)):
+    if _run(
+        _check_required_packages_deployed(
+            deps_list, lockfile, policy.dependencies, dep_names=dep_names
+        )
+    ):
         return result
-    if _run(_check_required_executable_untrusted(deps_list, lockfile, policy.executables, dep_names=dep_names)):
+    if _run(
+        _check_required_executable_untrusted(
+            deps_list, lockfile, policy.executables, dep_names=dep_names
+        )
+    ):
         return result
     if _run(_check_required_package_version(deps_list, lockfile, policy.dependencies)):
         return result
