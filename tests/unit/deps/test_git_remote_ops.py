@@ -10,6 +10,8 @@ No I/O or network calls; all input is plain strings / data objects.
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+
 import pytest
 
 from apm_cli.deps.git_remote_ops import (
@@ -32,6 +34,21 @@ def _branch(name: str, sha: str = "aabbccdd") -> RemoteRef:
 
 def _tag(name: str, sha: str = "aabbccdd") -> RemoteRef:
     return RemoteRef(name=name, ref_type=GitReferenceType.TAG, commit_sha=sha)
+
+
+class _CountingRemoteRefs(list[RemoteRef]):
+    """Track how many times and items the sorter traverses."""
+
+    def __init__(self, refs: list[RemoteRef]) -> None:
+        super().__init__(refs)
+        self.iter_calls = 0
+        self.items_yielded = 0
+
+    def __iter__(self) -> Iterator[RemoteRef]:
+        self.iter_calls += 1
+        for ref in super().__iter__():
+            self.items_yielded += 1
+            yield ref
 
 
 # ---------------------------------------------------------------------------
@@ -233,6 +250,24 @@ class TestSemverSortKey:
 class TestSortRemoteRefs:
     def test_empty_list(self) -> None:
         assert sort_remote_refs([]) == []
+
+    def test_partitions_mixed_refs_in_single_pass(self) -> None:
+        refs = _CountingRemoteRefs(
+            [
+                _branch("main"),
+                _tag("v1.0.0"),
+                RemoteRef("pinned-a", GitReferenceType.COMMIT, "c" * 40),
+                _branch("alpha"),
+                _tag("v2.0.0"),
+                RemoteRef("pinned-b", GitReferenceType.COMMIT, "d" * 40),
+            ]
+        )
+
+        result = sort_remote_refs(refs)
+
+        assert [ref.name for ref in result] == ["v2.0.0", "v1.0.0", "alpha", "main"]
+        assert refs.iter_calls == 1
+        assert refs.items_yielded == 6
 
     def test_tags_before_branches(self) -> None:
         refs = [_branch("main"), _tag("v1.0.0")]
