@@ -4,6 +4,7 @@ import ast
 import inspect
 import textwrap
 from collections.abc import Iterable
+from typing import overload
 from urllib.parse import urlparse
 
 import pytest
@@ -15,12 +16,15 @@ pytestmark = pytest.mark.unit
 
 
 class _CountedParts(list[str]):
-    """Count marker searches without changing list lookup semantics."""
+    """Observe marker searches, slice copies and indexed deletions."""
 
     def __init__(self, values: Iterable[str]) -> None:
         super().__init__(values)
         self.marker_contains = 0
         self.marker_indexes = 0
+        self.marker_index: int | None = None
+        self.marker_removal_slices = 0
+        self.deletion_indexes: list[int | slice] = []
 
     def __contains__(self, value: object) -> bool:
         if value == "_git":
@@ -30,7 +34,25 @@ class _CountedParts(list[str]):
     def index(self, value: str, start: int = 0, stop: int | None = None) -> int:
         if value == "_git":
             self.marker_indexes += 1
-        return super().index(value, start, len(self) if stop is None else stop)
+        index = super().index(value, start, len(self) if stop is None else stop)
+        if value == "_git":
+            self.marker_index = index
+        return index
+
+    @overload
+    def __getitem__(self, index: int) -> str: ...
+
+    @overload
+    def __getitem__(self, index: slice) -> list[str]: ...
+
+    def __getitem__(self, index: int | slice) -> str | list[str]:
+        if isinstance(index, slice) and self.marker_index is not None and not self.deletion_indexes:
+            self.marker_removal_slices += 1
+        return super().__getitem__(index)
+
+    def __delitem__(self, index: int | slice) -> None:
+        super().__delitem__(index)
+        self.deletion_indexes.append(index)
 
 
 class _CountedPath(str):
@@ -68,23 +90,42 @@ def test_shorthand_resolvers_scan_marker_once(marker: str, virtual: bool) -> Non
         )
     assert sum(parts.marker_contains for parts in path.parts) == 0
     assert sum(parts.marker_indexes for parts in path.parts) == 1
+    assert sum(parts.marker_removal_slices for parts in path.parts) == 0
+    assert [index for parts in path.parts for index in parts.deletion_indexes] == (
+        [2] if marker else []
+    )
 
 
 @pytest.mark.parametrize(
-    ("host", "path", "expected_repo", "expected_virtual"),
+    ("host", "path", "expected_repo", "expected_virtual", "marker_index"),
     [
-        ("dev.azure.com", "org/project/_git/repo", "org/project/repo", None),
-        ("dev.azure.com", "org/project/repo", "org/project/repo", None),
-        ("dev.azure.com", "org/My%20Project/_git/repo.git", "org/My Project/repo", None),
+        ("dev.azure.com", "org/project/_git/repo", "org/project/repo", None, 2),
+        ("dev.azure.com", "org/project/repo", "org/project/repo", None, None),
+        ("dev.azure.com", "org/My%20Project/_git/repo.git", "org/My Project/repo", None, 2),
         (
             "org.visualstudio.com",
             "project/_git/repo/skills/demo",
             "org/project/repo",
             "skills/demo",
+            1,
         ),
-        ("org.visualstudio.com", "project/repo", "org/project/repo", None),
-        ("org.visualstudio.com", "org/project/repo/skills/demo", "org/project/repo", "skills/demo"),
-        ("github.com", "owner/repo", "owner/repo", None),
+        ("org.visualstudio.com", "project/repo", "org/project/repo", None, None),
+        (
+            "org.visualstudio.com",
+            "org/project/repo/skills/demo",
+            "org/project/repo",
+            "skills/demo",
+            None,
+        ),
+        ("github.com", "owner/repo", "owner/repo", None, None),
+        ("github.com", "owner/%5Fgit/My%20Repo", "owner/My%20Repo", None, 1),
+        (
+            "dev.azure.com",
+            "org/project/_git/repo/skills/_git/demo",
+            "org/project/repo",
+            "skills/_git/demo",
+            2,
+        ),
     ],
 )
 def test_url_validator_scans_marker_once(
@@ -93,8 +134,9 @@ def test_url_validator_scans_marker_once(
     path: str,
     expected_repo: str,
     expected_virtual: str | None,
+    marker_index: int | None,
 ) -> None:
-    """The marker lookup also supplies the legacy-host presence flag."""
+    """One lookup deletes matching decoded/raw indexes without slice copies."""
     lists: list[_CountedParts] = []
 
     def counted_list(values: Iterable[str]) -> _CountedParts:
@@ -109,6 +151,11 @@ def test_url_validator_scans_marker_once(
     )
     assert sum(parts.marker_contains for parts in lists) == 0
     assert sum(parts.marker_indexes for parts in lists) == 1
+    assert sum(parts.marker_removal_slices for parts in lists) == 0
+    assert len(lists) == 2
+    expected_deletions = [] if marker_index is None else [marker_index]
+    assert lists[0].deletion_indexes == lists[1].deletion_indexes == expected_deletions
+    assert lists[0] is not lists[1]
 
 
 @pytest.mark.parametrize(
@@ -132,6 +179,23 @@ def test_marker_stripping_sites_do_not_pre_scan(method: str) -> None:
         and any(isinstance(op, (ast.In, ast.NotIn)) for op in node.ops)
     ]
     assert marker_memberships == []
+    marker_deletions = [
+        target.value.id
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Delete)
+        for target in node.targets
+        if isinstance(target, ast.Subscript)
+        and isinstance(target.value, ast.Name)
+        and isinstance(target.slice, ast.Name)
+        and target.slice.id == "git_idx"
+    ]
+    expected_lists = {
+        "_detect_virtual_package": ["path_segments"],
+        "_resolve_virtual_shorthand_repo": ["parts"],
+        "_resolve_shorthand_to_parsed_url": ["parts"],
+        "_validate_url_repo_path": ["path_parts", "presentation_path_parts"],
+    }
+    assert marker_deletions == expected_lists[method]
 
 
 @pytest.mark.parametrize(

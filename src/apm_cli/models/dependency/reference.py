@@ -1220,7 +1220,7 @@ class DependencyReference(ProviderCoordinateMixin):
             except ValueError:
                 pass
             else:
-                path_segments = path_segments[:git_idx] + path_segments[git_idx + 1 :]
+                del path_segments[git_idx]
 
         # Detect Artifactory VCS paths (artifactory/{repo-key}/{owner}/{repo})
         is_artifactory = is_generic_host and is_artifactory_path(path_segments)
@@ -1394,7 +1394,7 @@ class DependencyReference(ProviderCoordinateMixin):
         except ValueError:
             pass
         else:
-            parts = parts[:git_idx] + parts[git_idx + 1 :]
+            del parts[git_idx]
 
         host = None
         if len(parts) >= 2:
@@ -1446,7 +1446,7 @@ class DependencyReference(ProviderCoordinateMixin):
             except ValueError:
                 pass
             else:
-                parts = parts[:git_idx] + parts[git_idx + 1 :]
+                del parts[git_idx]
 
             parts[0], port = _split_shorthand_host_port(parts[0])
 
@@ -1543,10 +1543,8 @@ class DependencyReference(ProviderCoordinateMixin):
             had_git_marker = False
         else:
             had_git_marker = True
-            path_parts = path_parts[:git_idx] + path_parts[git_idx + 1 :]
-            presentation_path_parts = (
-                presentation_path_parts[:git_idx] + presentation_path_parts[git_idx + 1 :]
-            )
+            del path_parts[git_idx]
+            del presentation_path_parts[git_idx]
 
         is_ado_host = is_azure_devops_hostname(hostname)
 
