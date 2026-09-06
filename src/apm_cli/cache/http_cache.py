@@ -27,6 +27,7 @@ import json
 import logging
 import os
 import re
+import stat
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -69,12 +70,13 @@ class HttpCache:
         self._cache_dir = get_http_path(cache_root)
         self._cache_dir.mkdir(parents=True, exist_ok=True)
         os.chmod(str(self._cache_dir), 0o700)
-        cleanup_incomplete(self._cache_dir)
-        # A brand-new/empty cache is known to be size zero, so its first
-        # store can take the size-cap fast path. Existing caches retain the
-        # unknown sentinel and are measured before eviction can be skipped.
+        self._tracked_size: int | None = None
+        # Emptiness is only eligibility: another process can populate the
+        # cache before our first store, so recheck after publication.
         with os.scandir(str(self._cache_dir)) as entries:
-            self._tracked_size: int | None = None if next(entries, None) is not None else 0
+            self._empty_first_store = next(entries, None) is None
+        if not self._empty_first_store:
+            cleanup_incomplete(self._cache_dir)
 
     def get(self, url: str, headers: dict[str, str] | None = None) -> CacheEntry | None:
         """Look up a cached response for *url*.
@@ -183,6 +185,8 @@ class HttpCache:
             headers: Response headers (case-insensitive keys expected
                 from requests library).
         """
+        empty_first_store = self._empty_first_store
+        self._empty_first_store = False
         headers = headers or {}
         ttl = self._parse_ttl(headers)
         etag = headers.get("ETag") or headers.get("etag")
@@ -212,10 +216,11 @@ class HttpCache:
         # serve.
         staged = stage_path(entry_path)
         ensure_path_within(staged, self._cache_dir)
+        meta_bytes = json.dumps(meta).encode("utf-8")
         try:
             staged.mkdir(parents=True, exist_ok=True)
             os.chmod(str(staged), 0o700)
-            (staged / "meta.json").write_text(json.dumps(meta), encoding="utf-8")
+            (staged / "meta.json").write_bytes(meta_bytes)
             (staged / "body").write_bytes(body)
         except OSError as exc:
             _log.debug("Failed to stage HTTP cache entry for %s: %s", url, exc)
@@ -233,17 +238,19 @@ class HttpCache:
 
             with contextlib.suppress(OSError):
                 robust_rmtree(entry_path, ignore_errors=True)
-        atomic_land(staged, entry_path, lock)
+        landed = atomic_land(staged, entry_path, lock)
         # Update mtime for LRU tracking
         with contextlib.suppress(OSError):
             os.utime(str(entry_path), None)
 
-        # Update tracked size with an upper-bound estimate. Over-counting is
-        # intentional: it triggers a real scan sooner, correcting the estimate,
-        # rather than delaying eviction. The scan in _enforce_size_cap resets
-        # _tracked_size to the real total once it runs.
-        if self._tracked_size is not None:
-            self._tracked_size += len(body) + 512  # body + metadata upper-bound estimate
+        # Replacements may overcount, triggering a conservative full scan.
+        # A losing writer must measure the winner rather than its discarded bytes.
+        if not landed:
+            self._tracked_size = None
+        elif self._tracked_size is not None:
+            self._tracked_size += len(body) + len(meta_bytes)
+        elif empty_first_store:
+            self._tracked_size = self._probe_first_store(entry_path, Path(lock.lock_file).name)
 
         # Enforce size cap
         self._enforce_size_cap()
@@ -331,6 +338,41 @@ class HttpCache:
 
         # Default TTL: 5 minutes for responses without Cache-Control
         return 300.0
+
+    def _probe_first_store(self, entry_path: Path, lock_name: str) -> int | None:
+        """Measure a sole published entry without enumerating its contents."""
+        found_entry = False
+        try:
+            with os.scandir(str(self._cache_dir)) as entries:
+                for _ in range(3):
+                    entry = next(entries, None)
+                    if entry is None:
+                        break
+                    if entry.name == entry_path.name and entry.is_dir(follow_symlinks=False):
+                        found_entry = True
+                    elif entry.name == lock_name and entry.is_file(follow_symlinks=False):
+                        continue
+                    else:
+                        return None
+                else:
+                    return None
+
+            if not found_entry:
+                return None
+
+            # Read live sizes: another writer may have replaced the same key
+            # after our successful landing. As with a full scan, this is a
+            # best-effort snapshot, not a cross-process transaction.
+            total = 0
+            for name in ("body", "meta.json"):
+                info = (entry_path / name).stat(follow_symlinks=False)
+                if not stat.S_ISREG(info.st_mode):
+                    return None
+                total += info.st_size
+            return total
+        except OSError as exc:
+            _log.debug("HTTP cache first-store probe failed; falling back to size scan: %s", exc)
+            return None
 
     def _enforce_size_cap(self) -> None:
         """Evict LRU entries if total cache size exceeds the cap.
