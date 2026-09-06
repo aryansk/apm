@@ -203,6 +203,30 @@ class TestHttpCacheSizeCap:
         assert cache.get_stats()["total_size_bytes"] <= 2400
         assert cache.get(url) is None
 
+    def test_store_after_refresh_counts_metadata_growth(self, tmp_path: Path) -> None:
+        old_url = "https://example.com/old"
+        new_url = "https://example.com/new"
+        with (
+            patch("apm_cli.cache.http_cache.MAX_HTTP_CACHE_BYTES", 700),
+            patch("apm_cli.cache.http_cache.time.time", return_value=1700000000.0),
+        ):
+            cache = HttpCache(tmp_path)
+            cache.store(old_url, b"a", headers={"ETag": "x"})
+            before_refresh = cache.get_stats()["total_size_bytes"]
+            cache.refresh_expiry(old_url, {"ETag": "e" * 400})
+            after_refresh = cache.get_stats()["total_size_bytes"]
+            assert before_refresh < after_refresh <= 700
+            refreshed = cache.get(old_url)
+            assert refreshed is not None and refreshed.etag == "e" * 400
+            os.utime(cache._entry_path(old_url), (1, 1))
+
+            cache.store(new_url, b"b")
+
+            assert cache.get_stats()["total_size_bytes"] <= 700
+            assert cache.get(old_url) is None
+            new_entry = cache.get(new_url)
+            assert new_entry is not None and new_entry.body == b"b"
+
     def test_nonempty_initialization_cleans_staging(self, tmp_path: Path) -> None:
         staged = tmp_path / "http_v1" / "old.inc.12345678"
         staged.mkdir(parents=True)

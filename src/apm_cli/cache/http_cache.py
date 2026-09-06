@@ -276,6 +276,8 @@ class HttpCache:
             new_etag = (headers or {}).get("ETag") or (headers or {}).get("etag")
             if new_etag:
                 meta["etag"] = new_etag
+            # Metadata may grow, even if writing it fails partway through.
+            self._tracked_size = None
             meta_path.write_text(json.dumps(meta), encoding="utf-8")
             os.utime(str(entry_path), None)
         except (json.JSONDecodeError, OSError) as exc:
