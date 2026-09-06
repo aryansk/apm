@@ -121,7 +121,7 @@ Consumers can opt into fail-closed semantics for the no-cache case from their `a
 
 ### `ttl`
 
-Time-to-live in seconds for the cached policy file. Default: `3600` (1 hour). The cache is stored in `apm_modules/.policy-cache/`.
+Time-to-live in seconds for the cached policy file. Default: `3600` (1 hour). The cache is stored in the platform user cache under `apm/policy_v1/<project-key>/`, not inside the project.
 
 ---
 
@@ -612,11 +612,17 @@ Install-time enforcement does **NOT** emit JSON or SARIF. The output is human-re
 
 ### 2. Discovery and applicability
 
-APM auto-discovers policy from `<org>/.github/apm-policy.yml` for GitHub and
-GitHub Enterprise remotes. Azure DevOps remotes use the org `_apm` project and
-`_apm` repository. GitLab and plain git remotes currently fall through with no
-policy applied. Repositories with no detectable git remote emit an explicit
-"could not determine org" line and skip discovery.
+For GitHub and GitHub Enterprise remotes, APM auto-discovers the first policy
+found in the organization cascade: `.github-private`, `.github`, `.apm`, then
+`_apm`. Azure DevOps remotes use the org `apm` project and `apm-policy`
+repository. Legacy `_apm/_apm` is a temporary fallback after a 404 from the
+primary coordinate.
+GitLab remotes use `<top-level-group>/apm-policy/apm-policy.yml`, using the
+first path segment of the remote; nested subgroup scopes are not searched. Set
+`GITLAB_HOST` or `APM_GITLAB_HOSTS` to recognize a self-managed host, and use
+`APM_GITLAB_POLICY_REPO` to select another project name. Plain git remotes
+fall through with no policy applied. Repositories with no detectable git remote
+emit an explicit "could not determine org" line and skip discovery.
 
 The `--policy <override>` flag is **audit-only today** — it works on `apm audit --ci` but is not yet wired through `apm install`. Use the escape hatches in section 8 if you need to bypass install-time enforcement for a single invocation.
 
@@ -789,7 +795,7 @@ $ echo $?
 
 ### 9. Cache and offline behaviour
 
-Resolved effective policy is cached under `apm_modules/.policy-cache/`. Default TTL is `cache.ttl` from the policy itself (`3600` seconds). Beyond TTL, APM will serve a stale cache on refresh failure with a loud warning, up to a hard ceiling of 7 days (`MAX_STALE_TTL`). `--no-cache` forces a fresh fetch and ignores any cached entry. Cache writes are atomic (temp file + rename) to survive concurrent installs.
+Resolved effective policy is cached under the platform user cache at `apm/policy_v1/<project-key>/`. Default TTL is `cache.ttl` from the policy itself (`3600` seconds). Beyond TTL, APM will serve a stale cache on refresh failure with a loud warning, up to a hard ceiling of 7 days (`MAX_STALE_TTL`). `--no-cache` forces a fresh fetch and ignores any cached entry. Cache writes are atomic (temp file + rename) to survive concurrent installs.
 
 ### 9.5. Network failure semantics
 
