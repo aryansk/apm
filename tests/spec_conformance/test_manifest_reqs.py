@@ -11,6 +11,7 @@ or (c) a real apm_cli loader call where the surface exists.
 
 from __future__ import annotations
 
+import shutil
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock
@@ -19,9 +20,11 @@ import jsonschema
 import pytest
 
 from apm_cli.adapters.client.base import MCPClientAdapter
+from apm_cli.deps.plugin_parser import normalize_plugin_directory
 from apm_cli.install.phases.finalize import _hint_project_compile_needed
 from apm_cli.install.target_filter import resolve_effective_package_targets
 from apm_cli.integration.agent_integrator import AgentIntegrator
+from apm_cli.integration.hook_integrator import HookIntegrator
 from apm_cli.integration.skill_integrator import SkillIntegrator
 from apm_cli.integration.targets import KNOWN_TARGETS
 from apm_cli.models.apm_package import APMPackage
@@ -32,6 +35,7 @@ from apm_cli.utils.diagnostics import (
 )
 from tests.spec_conformance._helpers import (
     assert_spec_contains,
+    load_json_fixture,
     load_schema,
     load_yaml_fixture,
     validate_against,
@@ -43,16 +47,16 @@ from tests.spec_conformance._helpers import (
 
 @pytest.mark.req("req-mf-001")
 def test_manifest_required_keys_enforced_by_schema():
-    schema = load_schema("manifest-v0.1.schema.json")
+    schema = load_schema("manifest-v0.1.41.schema.json")
     assert set(schema["required"]) == {"name", "version"}
     validate_against(
-        "manifest-v0.1.schema.json", load_yaml_fixture("manifest", "valid-minimal.yml")
+        "manifest-v0.1.41.schema.json", load_yaml_fixture("manifest", "valid-minimal.yml")
     )
 
 
 @pytest.mark.req("req-mf-002")
 def test_manifest_name_is_non_empty_string():
-    schema = load_schema("manifest-v0.1.schema.json")
+    schema = load_schema("manifest-v0.1.41.schema.json")
     assert schema["properties"]["name"]["type"] == "string"
     assert schema["properties"]["name"]["minLength"] == 1
     doc = load_yaml_fixture("manifest", "valid-minimal.yml")
@@ -63,12 +67,12 @@ def test_manifest_name_is_non_empty_string():
 def test_manifest_missing_name_rejected_by_schema():
     doc = load_yaml_fixture("manifest", "invalid-missing-name.yml")
     with pytest.raises(jsonschema.ValidationError):
-        validate_against("manifest-v0.1.schema.json", doc)
+        validate_against("manifest-v0.1.41.schema.json", doc)
 
 
 @pytest.mark.req("req-mf-004")
 def test_manifest_version_is_semver_2_0_0():
-    schema = load_schema("manifest-v0.1.schema.json")
+    schema = load_schema("manifest-v0.1.41.schema.json")
     pattern = schema["properties"]["version"]["pattern"]
     assert "0|[1-9]" in pattern, "version pattern must be semver 2.0.0 grammar"
     assert_spec_contains("semver 2.0.0", "version`")
@@ -90,12 +94,12 @@ def test_manifest_target_enum_is_pinned():
 def test_consumer_rejects_missing_source_key():
     doc = load_yaml_fixture("manifest", "invalid-no-source-key.yml")
     with pytest.raises(jsonschema.ValidationError):
-        validate_against("manifest-v0.1.schema.json", doc)
+        validate_against("manifest-v0.1.41.schema.json", doc)
 
 
 @pytest.mark.req("req-mf-007")
 def test_consumer_apm_source_field_has_supported_shapes():
-    schema = load_schema("manifest-v0.1.schema.json")
+    schema = load_schema("manifest-v0.1.41.schema.json")
     entry = schema["$defs"]["depEntry"]
     one_of = entry["oneOf"]
     has_string = any(s.get("type") == "string" for s in one_of)
@@ -107,14 +111,14 @@ def test_consumer_apm_source_field_has_supported_shapes():
 
 @pytest.mark.req("req-mf-008")
 def test_consumer_supports_pinned_version():
-    schema = load_schema("manifest-v0.1.schema.json")
+    schema = load_schema("manifest-v0.1.41.schema.json")
     entry_obj = next(s for s in schema["$defs"]["depEntry"]["oneOf"] if s.get("type") == "object")
     assert "version" in entry_obj["properties"]
 
 
 @pytest.mark.req("req-mf-009")
 def test_consumer_supports_pinned_commit():
-    schema = load_schema("manifest-v0.1.schema.json")
+    schema = load_schema("manifest-v0.1.41.schema.json")
     entry_obj = next(s for s in schema["$defs"]["depEntry"]["oneOf"] if s.get("type") == "object")
     assert "ref" in entry_obj["properties"], (
         "depEntry MUST permit a `ref` field for commit / branch / tag pins"
@@ -123,7 +127,7 @@ def test_consumer_supports_pinned_commit():
 
 @pytest.mark.req("req-mf-010")
 def test_consumer_supports_apm_source_short_form_string():
-    schema = load_schema("manifest-v0.1.schema.json")
+    schema = load_schema("manifest-v0.1.41.schema.json")
     one_of = schema["$defs"]["depEntry"]["oneOf"]
     string_form = next(s for s in one_of if s.get("type") == "string")
     assert string_form.get("minLength", 0) >= 1
@@ -131,7 +135,7 @@ def test_consumer_supports_apm_source_short_form_string():
 
 @pytest.mark.req("req-mf-011")
 def test_consumer_supports_apm_source_table_form():
-    schema = load_schema("manifest-v0.1.schema.json")
+    schema = load_schema("manifest-v0.1.41.schema.json")
     entry_obj = next(s for s in schema["$defs"]["depEntry"]["oneOf"] if s.get("type") == "object")
     options = entry_obj["oneOf"]
     required_sets = sorted(tuple(sorted(o["required"])) for o in options)
@@ -144,12 +148,12 @@ def test_consumer_supports_apm_source_table_form():
 def test_consumer_rejects_unknown_source_kind():
     doc = load_yaml_fixture("manifest", "invalid-source-kind.yml")
     with pytest.raises(jsonschema.ValidationError):
-        validate_against("manifest-v0.1.schema.json", doc)
+        validate_against("manifest-v0.1.41.schema.json", doc)
 
 
 @pytest.mark.req("req-mf-013")
 def test_consumer_supports_local_path_source():
-    schema = load_schema("manifest-v0.1.schema.json")
+    schema = load_schema("manifest-v0.1.41.schema.json")
     entry_obj = next(s for s in schema["$defs"]["depEntry"]["oneOf"] if s.get("type") == "object")
     assert "path" in entry_obj["properties"]
 
@@ -157,22 +161,22 @@ def test_consumer_supports_local_path_source():
 @pytest.mark.req("req-mf-014")
 def test_producer_rejects_non_http_registry_scheme():
     """Schema pattern `^https?://` is the regression handle."""
-    schema = load_schema("manifest-v0.1.schema.json")
+    schema = load_schema("manifest-v0.1.41.schema.json")
     reg = schema["properties"]["registries"]["additionalProperties"]["oneOf"][1]
     assert reg["properties"]["url"]["pattern"] == "^https?://"
     doc = load_yaml_fixture("manifest", "invalid-registry-scheme.yml")
     with pytest.raises(jsonschema.ValidationError):
-        validate_against("manifest-v0.1.schema.json", doc)
+        validate_against("manifest-v0.1.41.schema.json", doc)
 
 
 @pytest.mark.req("req-mf-015")
 def test_producer_rejects_unknown_registries_keys():
-    schema = load_schema("manifest-v0.1.schema.json")
+    schema = load_schema("manifest-v0.1.41.schema.json")
     reg = schema["properties"]["registries"]["additionalProperties"]["oneOf"][1]
     assert reg["additionalProperties"] is False
     doc = load_yaml_fixture("manifest", "invalid-registries-typo.yml")
     with pytest.raises(jsonschema.ValidationError):
-        validate_against("manifest-v0.1.schema.json", doc)
+        validate_against("manifest-v0.1.41.schema.json", doc)
 
 
 @pytest.mark.req("req-mf-016")
@@ -195,14 +199,14 @@ def test_producer_publishes_apm_yml_at_repo_root():
 
 @pytest.mark.req("req-mf-018")
 def test_consumer_restricts_policy_hash_algorithm_to_strong_set():
-    schema = load_schema("manifest-v0.1.schema.json")
+    schema = load_schema("manifest-v0.1.41.schema.json")
     enum = schema["properties"]["policy"]["properties"]["hash_algorithm"]["enum"]
     assert set(enum) == {"sha256", "sha384", "sha512"}
 
 
 @pytest.mark.req("req-mf-019")
 def test_consumer_supports_default_host_field():
-    schema = load_schema("manifest-v0.1.schema.json")
+    schema = load_schema("manifest-v0.1.41.schema.json")
     assert "default_host" in schema["properties"]
     doc = load_yaml_fixture("manifest", "x-extension-roundtrip.yml")
     assert doc.get("default_host"), "fixture must exercise default_host"
@@ -300,6 +304,110 @@ def test_consumer_diagnoses_empty_skill_subset_match(tmp_path: Path) -> None:
     )
 
 
+@pytest.mark.req("req-mf-022")
+def test_consumer_names_skills_a_plugin_collection_exposes(tmp_path: Path) -> None:
+    """The available-names half of req-mf-022 must answer with the real set.
+
+    Section 8.1 counts a plugin collection with a named-skills container
+    among the layouts that expose selectable skills. Such a container,
+    declared in the plugin manifest, was normalized under its own name --
+    one level below the depth enumeration reads -- so a subset that matched
+    nothing reported `(none)` as available for a dependency exposing two.
+    The diagnostic fired as required and named the wrong set (#2530).
+    """
+    from apm_cli.models.validation import PackageType
+
+    plugin = tmp_path / "dotnet-advanced"
+    plugin_json = plugin / ".claude-plugin" / "plugin.json"
+    plugin_json.parent.mkdir(parents=True)
+    plugin_json.write_text(
+        '{"name": "dotnet-advanced", "version": "1.0.0", "skills": ["./skills/"]}',
+        encoding="utf-8",
+    )
+    for name in ("csharp-scripts", "dotnet-pinvoke"):
+        skill = plugin / "skills" / name
+        skill.mkdir(parents=True)
+        (skill / "SKILL.md").write_text(f"# {name}\n", encoding="utf-8")
+
+    normalize_plugin_directory(plugin, plugin_json)
+
+    # The declared container names the skills; it is not itself one.
+    normalized = plugin / ".apm" / "skills"
+    assert not (normalized / "skills").exists()
+    assert (normalized / "csharp-scripts" / "SKILL.md").is_file()
+
+    available = SkillIntegrator.available_skill_names(
+        SimpleNamespace(install_path=plugin, package_type=PackageType.MARKETPLACE_PLUGIN)
+    )
+    assert available == frozenset({"csharp-scripts", "dotnet-pinvoke"})
+
+    diagnostics = DiagnosticCollector()
+    SkillIntegrator._warn_no_skill_filter_match(
+        available,
+        ("missing",),
+        "acme/dotnet-advanced",
+        diagnostics=diagnostics,
+    )
+    warning = diagnostics.by_category()[CATEGORY_WARNING][0]
+    assert "Available: csharp-scripts, dotnet-pinvoke" in warning.message
+    assert "Available: (none)" not in warning.message
+
+    assert_spec_contains("with a named-skills container")
+
+
+@pytest.mark.req("req-pr-006")
+def test_plugin_skills_declaration_is_authoritative(tmp_path: Path) -> None:
+    """req-pr-006 resolves plugin names from the declaration, not the tree.
+
+    Section 8.1 settles which set that is for a plugin collection: artifacts
+    are mapped per the plugin manifest, so the resolved declaration is the
+    container of individually addressable entries. Deployment re-derived the
+    set from the raw pre-resolution `skills/` directory instead, so a plugin
+    declaring one of two sibling skills reported -- and deployed -- both. The
+    diagnostic named a skill the consumer had no manifest basis to offer
+    (#2537).
+    """
+    from apm_cli.models.validation import PackageType
+
+    plugin = tmp_path / "selective"
+    plugin_json = plugin / ".claude-plugin" / "plugin.json"
+    plugin_json.parent.mkdir(parents=True)
+    plugin_json.write_text(
+        '{"name": "selective", "version": "1.0.0", "skills": ["./skills/declared"]}',
+        encoding="utf-8",
+    )
+    for name in ("declared", "undeclared"):
+        skill = plugin / "skills" / name
+        skill.mkdir(parents=True)
+        (skill / "SKILL.md").write_text(f"# {name}\n", encoding="utf-8")
+
+    normalize_plugin_directory(plugin, plugin_json)
+
+    available = SkillIntegrator.available_skill_names(
+        SimpleNamespace(install_path=plugin, package_type=PackageType.MARKETPLACE_PLUGIN)
+    )
+    assert available == frozenset({"declared"})
+
+    diagnostics = DiagnosticCollector()
+    SkillIntegrator._warn_no_skill_filter_match(
+        available,
+        ("undeclared",),
+        "acme/selective",
+        diagnostics=diagnostics,
+    )
+    warning = diagnostics.by_category()[CATEGORY_WARNING][0]
+    assert "Available: declared" in warning.message
+    assert "undeclared" not in warning.message.split("Available:")[1]
+
+    assert_spec_contains(
+        "Only an omitted",
+        "list of strings and replaces that",
+        "an explicit empty list contributes no skills",
+        "missing, unreadable, malformed, escaping,",
+        "Only the resulting names are eligible for enumeration",
+    )
+
+
 @pytest.mark.req("req-mf-024")
 def test_consumer_preserves_registry_identity_on_structured_rewrite(monkeypatch):
     """req-mf-024: a registry-sourced (`id:`) entry MUST NOT be silently
@@ -348,7 +456,7 @@ def test_consumer_preserves_x_extension_keys_on_round_trip():
     doc = load_yaml_fixture("manifest", "x-extension-roundtrip.yml")
     x_keys = [k for k in doc if k.startswith("x-")]
     assert x_keys, "fixture must contain at least one x-* key"
-    schema = load_schema("manifest-v0.1.schema.json")
+    schema = load_schema("manifest-v0.1.41.schema.json")
     pp = schema.get("patternProperties", {})
     assert any(k.startswith("^x-") for k in pp), (
         "manifest schema MUST declare patternProperties for x-* keys"
@@ -736,19 +844,19 @@ def test_dependency_package_targets_are_restriction_only() -> None:
 
     assert disjoint.targets == ()
     assert tuple(target.name for target in universal.targets) == ("cursor",)
-    schema = load_schema("manifest-v0.1.schema.json")
+    schema = load_schema("manifest-v0.1.41.schema.json")
     jsonschema.Draft202012Validator.check_schema(schema)
     validate_against(
-        "manifest-v0.1.schema.json",
+        "manifest-v0.1.41.schema.json",
         {"name": "claude-hooks", "version": "1.0.0", "targets": ["claude"]},
     )
     validate_against(
-        "manifest-v0.1.schema.json",
+        "manifest-v0.1.41.schema.json",
         {"name": "legacy-null", "version": "1.0.0", "target": None},
     )
     with pytest.raises(jsonschema.ValidationError):
         validate_against(
-            "manifest-v0.1.schema.json",
+            "manifest-v0.1.41.schema.json",
             {
                 "name": "conflicting-hooks",
                 "version": "1.0.0",
@@ -758,13 +866,13 @@ def test_dependency_package_targets_are_restriction_only() -> None:
         )
     with pytest.raises(jsonschema.ValidationError):
         validate_against(
-            "manifest-v0.1.schema.json",
+            "manifest-v0.1.41.schema.json",
             {"name": "blank-target", "version": "1.0.0", "targets": [""]},
         )
     for malformed_token in ("Cursor", "../cursor"):
         with pytest.raises(jsonschema.ValidationError):
             validate_against(
-                "manifest-v0.1.schema.json",
+                "manifest-v0.1.41.schema.json",
                 {
                     "name": "malformed-target",
                     "version": "1.0.0",
@@ -779,7 +887,7 @@ def test_dependency_package_targets_are_restriction_only() -> None:
     ):
         with pytest.raises(jsonschema.ValidationError):
             validate_against(
-                "manifest-v0.1.schema.json",
+                "manifest-v0.1.41.schema.json",
                 {"name": "invalid-target", "version": "1.0.0", **invalid_fields},
             )
     assert_spec_contains(
@@ -791,7 +899,78 @@ def test_dependency_package_targets_are_restriction_only() -> None:
         "MUST be rejected before target-scoped",
         "MUST be reconciled under",
         "[req-lk-021](#req-lk-021)",
-        "[req-tg-008](#req-tg-008), [req-tg-009](#req-tg-009),\n[req-tg-010](#req-tg-010), [req-sc-001](#req-sc-001),",
+        "[req-tg-010](#req-tg-010), [req-tg-011](#req-tg-011),\n"
+        "[req-tg-012](#req-tg-012), [req-tg-013](#req-tg-013),",
+    )
+
+
+@pytest.mark.req("req-tg-014")
+def test_user_scoped_mcp_target_selection_ignores_project_signals(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """User-scope MCP discovery cannot inherit project-only target signals."""
+    from apm_cli.core.target_detection import resolve_manifest_target_decision
+    from apm_cli.integration.mcp_integrator_install import partition_user_scope_runtimes
+
+    project = tmp_path / "project"
+    project.mkdir()
+    (project / ".cursor").mkdir()
+    user_manifest = tmp_path / "home" / ".apm" / "apm.yml"
+    user_manifest.parent.mkdir(parents=True)
+    user_manifest.write_text(
+        "name: user-scope\nversion: 0.1.0\ndependencies:\n  mcp: []\n",
+        encoding="ascii",
+    )
+    monkeypatch.setattr("apm_cli.config.get_install_target", lambda *, create_config=True: None)
+
+    discovery = resolve_manifest_target_decision(
+        project,
+        manifest_path=user_manifest,
+        explicit_target=None,
+        user_scope=True,
+    )
+    explicit = resolve_manifest_target_decision(
+        project,
+        manifest_path=user_manifest,
+        explicit_target="codex",
+        user_scope=True,
+    )
+    manifest_target_path = user_manifest.with_name("manifest-target.yml")
+    manifest_target_path.write_text(
+        "name: user-scope\nversion: 0.1.0\ntargets: [claude]\n",
+        encoding="ascii",
+    )
+    manifest = resolve_manifest_target_decision(
+        project,
+        manifest_path=manifest_target_path,
+        explicit_target=None,
+        user_scope=True,
+    )
+    configured_path = user_manifest.with_name("configured-target.yml")
+    configured_path.write_text(
+        "name: user-scope\nversion: 0.1.0\n",
+        encoding="ascii",
+    )
+    monkeypatch.setattr("apm_cli.config.get_install_target", lambda *, create_config=True: "vscode")
+    configured = resolve_manifest_target_decision(
+        project,
+        manifest_path=configured_path,
+        explicit_target=None,
+        user_scope=True,
+    )
+
+    assert (discovery.value, discovery.source) == (None, "auto-detect")
+    assert (explicit.value, explicit.source) == ("codex", "--target flag")
+    assert (manifest.value, manifest.source) == (["claude"], "apm.yml")
+    assert (configured.value, configured.source) == ("vscode", "apm config target")
+    assert partition_user_scope_runtimes(["vscode", "claude"]) == (["claude"], ["vscode"])
+    assert_spec_contains(
+        "User-scoped MCP target selection",
+        "Once a source selects one or more\ntargets, the consumer MUST NOT consult",
+        "Project-scoped\ntarget-detection signals outside the user scope MUST NOT",
+        "Before creating or modifying the user-scope manifest, lockfile, or target",
+        "For a mixed set, the supported\nsubset MUST become the effective target set",
     )
 
 
@@ -925,10 +1104,204 @@ def test_project_scoped_native_hook_command_is_portably_anchored() -> None:
     )
 
 
+@pytest.mark.req("req-tg-011")
+def test_agent_plugin_target_exclusion_stays_opaque_after_materialization() -> None:
+    """Target exclusion permits acquisition and lock state but no deployment."""
+    assert_spec_contains(
+        "opaque at the deployment\nboundary",
+        "materialization beneath the resolved dependency root, and lock\nidentity recording MAY",
+        "MUST NOT create target-native registration, settings,\ncatalog, or ownership state",
+        "ordinary dependencies in the same install MUST remain\neligible",
+    )
+
+
+@pytest.mark.req("req-tg-011")
+def test_agent_plugin_target_exclusion_materializes_without_projection(
+    tmp_path, monkeypatch
+) -> None:
+    """Bind req-tg-011 to the real excluded-target install lifecycle."""
+    from tests.unit.copilot_plugins.test_install_lifecycle import (
+        test_non_copilot_target_plugin_noop_fails_without_committing_state as _run_boundary_contract,
+    )
+
+    _run_boundary_contract(tmp_path, monkeypatch)
+
+
+@pytest.mark.req("req-tg-012")
+def test_plugin_root_hook_resolution_preserves_quoting_and_warns(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Split-quoted roots resolve, while malformed roots remain visible."""
+    package = tmp_path / "package"
+    script = package / "hooks" / "probe.py"
+    script.parent.mkdir(parents=True)
+    script.write_text("print('ok')\n", encoding="utf-8")
+    integrator = HookIntegrator()
+
+    for source_command in (
+        'python3 "${CLAUDE_PLUGIN_ROOT}"/hooks/probe.py',
+        r"python3 '${CLAUDE_PLUGIN_ROOT}'\hooks\probe.py",
+    ):
+        command, scripts = integrator._rewrite_command_for_target(
+            source_command,
+            package,
+            "plugin",
+            "claude",
+        )
+
+        assert "${CLAUDE_PLUGIN_ROOT}" not in command
+        assert command.count('"') == 2
+        assert len(scripts) == 1
+    assert "Unresolved plugin-root reference" not in capsys.readouterr().out
+
+    integrator._rewrite_command_for_target(
+        "python3 \"${CLAUDE_PLUGIN_ROOT}'/hooks/probe.py",
+        package,
+        "plugin",
+        "claude",
+    )
+    assert "Unresolved plugin-root reference" in capsys.readouterr().out
+
+
 @pytest.mark.req("req-sc-014")
 def test_bin_deployment_defaults_to_deny_in_non_interactive_context() -> None:
     """Per-invocation consent: non-TTY defaults to deny; explicit opt-in overrides."""
     assert_spec_contains(
         "MUST deny\nthat deployment by default when its standard output is not connected to a",
         "explicitly opted in for that invocation",
+    )
+
+
+@pytest.mark.req("req-sc-015")
+def test_authorized_source_plan_limits_scanning_and_skill_materialization(tmp_path: Path) -> None:
+    """Selected deployable files alone are scanned and admitted to a skill copy."""
+    from apm_cli.install.deployable_source_plan import DeployableSourcePlan
+    from apm_cli.security.gate import BLOCK_POLICY, SecurityGate
+
+    package_root = tmp_path / "package"
+    selected = package_root / "skills" / "selected" / "SKILL.md"
+    source_only = package_root / "source-only.txt"
+    selected.parent.mkdir(parents=True)
+    selected.write_text("selected\n", encoding="utf-8")
+    source_only.write_text("source-only\u202e\n", encoding="utf-8")
+    target = SimpleNamespace(primitives={"skills": object()})
+    plan = DeployableSourcePlan.create(
+        SimpleNamespace(install_path=package_root),
+        [target],
+        skill_subset=("selected",),
+        hooks_approved=False,
+        canvas_approved=False,
+        skip_bin=True,
+    )
+
+    assert not plan.includes("source-only.txt")
+    assert plan.copy_ignore(str(package_root), ["source-only.txt"]) == ["source-only.txt"]
+    assert not SecurityGate.scan_files(
+        package_root,
+        policy=BLOCK_POLICY,
+        path_filter=plan.includes,
+    ).has_findings
+
+    selected.write_text("selected\u202e\n", encoding="utf-8")
+    assert SecurityGate.scan_files(
+        package_root,
+        policy=BLOCK_POLICY,
+        path_filter=plan.includes,
+    ).has_findings
+
+
+@pytest.mark.req("req-sc-015")
+def test_authorized_source_plan_fixture_oracle_covers_symlinked_content(tmp_path: Path) -> None:
+    """The portable oracle keeps scan and materialization on one safe source set."""
+    from apm_cli.install.deployable_source_plan import DeployableSourcePlan
+    from apm_cli.security.gate import BLOCK_POLICY, SecurityGate
+
+    fixture = load_json_fixture("source-plan", "req-sc-015.json")
+    assert fixture["spec_anchor"] == "req-sc-015"
+    source = fixture["input"]
+    expected = fixture["expected"]
+    package_root = tmp_path / "package"
+    for entry in source["package_files"]:
+        path = package_root / entry["path"]
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(entry["content"], encoding="utf-8")
+    for entry in source["external_files"]:
+        path = tmp_path / entry["path"]
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(entry["content"], encoding="utf-8")
+    for entry in source["symlinks"]:
+        path = package_root / entry["path"]
+        path.parent.mkdir(parents=True, exist_ok=True)
+        target = package_root / entry["target"] if entry["internal"] else tmp_path / entry["target"]
+        path.symlink_to(target, target_is_directory=entry["kind"] == "directory")
+
+    target = SimpleNamespace(primitives={"skills": object()})
+    kwargs = {
+        "skill_subset": tuple(source["skill_subset"]),
+        "hooks_approved": False,
+        "canvas_approved": False,
+        "skip_bin": True,
+    }
+    plan = DeployableSourcePlan.create(
+        SimpleNamespace(install_path=package_root),
+        [target],
+        **kwargs,
+    )
+    expected_paths = frozenset(expected["authorized_paths"])
+    lifecycle_expectations = expected["lifecycles"]
+
+    assert plan.paths == expected_paths
+    assert all(not plan.includes(path) for path in expected["source_only_paths"])
+    assert all(not plan.includes(path) for path in expected["symlink_paths"])
+    install_scan = SecurityGate.scan_files(
+        package_root,
+        policy=BLOCK_POLICY,
+        path_filter=plan.includes,
+    )
+    assert install_scan.scanned_files == expected_paths
+
+    def materialize(destination: Path, source_plan: DeployableSourcePlan) -> frozenset[str]:
+        shutil.copytree(package_root, destination, ignore=source_plan.copy_ignore)
+        return frozenset(
+            path.relative_to(destination).as_posix()
+            for path in destination.rglob("*")
+            if path.is_file() and not path.is_symlink()
+        )
+
+    assert set(install_scan.scanned_files) == set(
+        lifecycle_expectations["install"]["scanned_paths"]
+    )
+    assert materialize(tmp_path / "materialized", plan) == frozenset(
+        lifecycle_expectations["install"]["materialized_paths"]
+    )
+    reintegration_plan = DeployableSourcePlan.create(
+        SimpleNamespace(install_path=package_root),
+        [target],
+        **kwargs,
+    )
+    reintegration_scan = SecurityGate.scan_files(
+        package_root,
+        policy=BLOCK_POLICY,
+        path_filter=reintegration_plan.includes,
+    )
+    assert reintegration_plan.paths == frozenset(
+        lifecycle_expectations["reintegration"]["authorized_paths"]
+    )
+    assert set(reintegration_scan.scanned_files) == set(
+        lifecycle_expectations["reintegration"]["scanned_paths"]
+    )
+    assert materialize(tmp_path / "reintegrated", reintegration_plan) == frozenset(
+        lifecycle_expectations["reintegration"]["materialized_paths"]
+    )
+
+
+@pytest.mark.req("req-sc-015")
+def test_authorized_source_plan_requirement_covers_reintegration_and_symlinks() -> None:
+    """The citation names every lifecycle and excludes symlink source entries."""
+    assert_spec_contains(
+        "including\ninstall and re-integration after uninstall. The set MUST exclude symlink\n"
+        "files and MUST NOT traverse symlinked directories.",
+        "MUST materialize primitive files only from that\nsame set; each primitive-integrator "
+        "materialization path MUST consume the\ncanonical set rather than derive a second classifier.",
     )
