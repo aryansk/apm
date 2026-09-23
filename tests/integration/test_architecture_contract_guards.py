@@ -7,6 +7,10 @@ from pathlib import Path
 
 import pytest
 
+from scripts.architecture_linter.runner import registered_rules
+
+_RULES_BY_ID = {rule.id: rule for rule in registered_rules()}
+
 
 def _write_portable_hook_package(tmp_path: Path) -> object:
     """Create one package carrying the flat portable hook shape."""
@@ -129,22 +133,99 @@ def test_neutral_hook_ir_snapshots_metadata() -> None:
         handler.metadata["new"] = "value"
 
 
+def test_neutral_hook_source_owner_validates_and_locates_commands() -> None:
+    """One neutral parser owns wrapped/naked shape and exact command pointers."""
+    from apm_cli.hook_contract import HOOK_COMMAND_KEYS, parse_hook_source
+
+    wrapped = parse_hook_source(
+        {
+            "hooks": {
+                "Pre/Tool": [
+                    {
+                        "hooks": [
+                            {"bash": "./run.sh"},
+                            {"powershell": "./run.ps1"},
+                        ]
+                    }
+                ]
+            }
+        }
+    )
+    naked = parse_hook_source({"Stop": [{"command": "echo stop"}]})
+
+    assert HOOK_COMMAND_KEYS == (
+        "command",
+        "bash",
+        "powershell",
+        "windows",
+        "linux",
+        "osx",
+    )
+    assert tuple(command.json_pointer for command in wrapped.commands) == (
+        "/hooks/Pre~1Tool/0/hooks/0/bash",
+        "/hooks/Pre~1Tool/0/hooks/1/powershell",
+    )
+    assert naked.commands[0].json_pointer == "/Stop/0/command"
+
+
+def test_plugin_root_hook_command_vocabulary_has_one_owner() -> None:
+    """Hook rewriting must consume one canonical placeholder vocabulary."""
+    root = Path(__file__).parents[2]
+    owner = (root / "src/apm_cli/integration/hook_command_paths.py").read_text(encoding="utf-8")
+    consumer = (root / "src/apm_cli/integration/hook_integrator.py").read_text(encoding="utf-8")
+    rule = _RULES_BY_ID["mutation_writes.neutral_hook_contract"]
+
+    for name in (
+        "CLAUDE_PLUGIN_ROOT",
+        "CURSOR_PLUGIN_ROOT",
+        "KIRO_PLUGIN_ROOT",
+        "PLUGIN_ROOT",
+    ):
+        assert owner.count(f'"{name}"') == 1
+        assert f'"{name}"' not in consumer
+    assert "drift projection" in rule.description
+
+
+def test_neutral_hook_walker_preserves_tolerant_integrator_inspection() -> None:
+    """Malformed legacy entries do not hide valid sibling transparency facts."""
+    from apm_cli.hook_contract import walk_hook_commands
+
+    commands = walk_hook_commands(
+        {
+            "hooks": {
+                "PreToolUse": [
+                    "invalid",
+                    {"command": 7},
+                    {"bash": "./valid.sh"},
+                    {"hooks": "invalid"},
+                    {"hooks": [None, {"powershell": "./also-valid.ps1"}]},
+                ]
+            }
+        }
+    )
+
+    assert tuple((item.key, item.command) for item in commands) == (
+        ("bash", "./valid.sh"),
+        ("powershell", "./also-valid.ps1"),
+    )
+
+
+@pytest.mark.parametrize("schema_revision", ["0.1", "0.1.41"])
 def test_manifest_schema_negotiates_normative_v01_registry_shape(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, schema_revision: str
 ) -> None:
     """Explicit v0.1 identity must select its normative registry parser."""
     from apm_cli.models.apm_package import APMPackage
-    from apm_cli.models.manifest_contract import OPENAPM_V01_SCHEMA_URI
 
     monkeypatch.setattr(
         "apm_cli.deps.registry.feature_gate.require_package_registry_enabled",
-        lambda _feature: None,
+        lambda _feature, *, create_config=True: None,
     )
     manifest = tmp_path / "apm.yml"
     manifest.write_text(
         "\n".join(
             (
-                f"$schema: {OPENAPM_V01_SCHEMA_URI}",
+                f"$schema: https://microsoft.github.io/apm/specs/schemas/manifest-v{schema_revision}.schema.json",
                 "name: demo",
                 "version: 1.0.0",
                 "registries:",
@@ -165,6 +246,8 @@ def test_manifest_schema_negotiates_normative_v01_registry_shape(
 
 def test_unknown_manifest_schema_identity_fails_closed(tmp_path: Path) -> None:
     """A future schema cannot be silently interpreted as the working draft."""
+    from urllib.parse import urlparse
+
     from apm_cli.models.apm_package import APMPackage
     from apm_cli.models.manifest_contract import UnsupportedManifestContractError
 
@@ -174,8 +257,13 @@ def test_unknown_manifest_schema_identity_fails_closed(tmp_path: Path) -> None:
         encoding="utf-8",
     )
 
-    with pytest.raises(UnsupportedManifestContractError):
+    with pytest.raises(UnsupportedManifestContractError) as caught:
         APMPackage.from_apm_yml(manifest)
+    urls = [urlparse(line.strip()) for line in str(caught.value).splitlines()[2:]]
+    assert [(url.scheme, url.hostname, url.path) for url in urls] == [
+        ("https", "microsoft.github.io", "/apm/specs/schemas/manifest-v0.1.schema.json"),
+        ("https", "microsoft.github.io", "/apm/specs/schemas/manifest-v0.1.41.schema.json"),
+    ]
 
 
 def test_lifecycle_docs_match_explicit_compilation_contract() -> None:
