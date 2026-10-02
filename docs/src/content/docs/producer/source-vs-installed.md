@@ -31,8 +31,9 @@ For example:
 
 ```yaml
 dependencies:
-  - git: acme/ai-primitives
-    ref: v1.4.0
+  apm:
+    - git: acme/ai-primitives
+      ref: v1.4.0
 ```
 
 This separation makes it clear which files are authored and which files are
