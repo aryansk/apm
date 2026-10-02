@@ -329,7 +329,20 @@ class CodexMarketplaceMapper(MarketplaceOutputMapper):
 
 
 class CopilotMarketplaceMapper(MarketplaceOutputMapper):
-    """Map packages into GitHub Copilot CLI marketplace format."""
+    """Map packages into GitHub Copilot CLI marketplace format.
+
+    The Copilot CLI schema (see issue #2430) intentionally diverges from the
+    Claude mapper above in several ways:
+      - ``description`` and ``version`` nest under a top-level ``metadata``
+        object instead of living at the document root.
+      - ``plugins[].source`` must always be a relative path *string*
+        (e.g. ``"./plugins/demo"``) -- never the ``{source, url, ref, sha}``
+        pin-preserving object shape used by Claude/Codex.
+      - Fields the Copilot CLI does not understand (``author``, ``tags``,
+        ``homepage``, ``repository``, ``license``, ``category``, git pin
+        metadata such as ``ref``/``sha``) are omitted entirely rather than
+        passed through.
+    """
 
     uses_remote_metadata = True
 
@@ -366,23 +379,13 @@ class CopilotMarketplaceMapper(MarketplaceOutputMapper):
                 continue
             plugin: dict[str, Any] = OrderedDict({"name": pkg.name})
             meta = remote_metadata.get(pkg.name, {})
-            plugin["description"] = entry.description or meta.get("description", "")
+            description = entry.description or meta.get("description")
+            if description:
+                plugin["description"] = description
             version = entry.version if entry.is_local else meta.get("version") or entry.version
             if version:
                 plugin["version"] = version
             plugin["source"] = _copilot_source(entry, pkg)
-            if entry.author:
-                plugin["author"] = dict(entry.author)
-            if entry.homepage:
-                plugin["homepage"] = entry.homepage
-            if entry.repository:
-                plugin["repository"] = entry.repository
-            if entry.license:
-                plugin["license"] = entry.license
-            if entry.category:
-                plugin["category"] = entry.category
-            if pkg.tags:
-                plugin["tags"] = list(pkg.tags)
             plugins.append(plugin)
 
         doc["plugins"] = plugins
@@ -445,26 +448,25 @@ def _codex_source(entry: PackageEntry, pkg: ResolvedPackage) -> dict[str, Any]:
     return source_obj
 
 
-def _copilot_source(entry: PackageEntry, pkg: ResolvedPackage) -> str | dict[str, Any]:
-    """Return a Copilot CLI source while preserving remote pin information."""
+def _copilot_source(entry: PackageEntry, pkg: ResolvedPackage) -> str:
+    """Return a Copilot CLI ``source`` as a relative path string.
+
+    Unlike Claude/Codex, the Copilot CLI schema has no object-shaped source
+    (no ``url``/``repo``/``ref``/``sha`` pin metadata) -- it only accepts a
+    relative path. Local packages keep their configured path unchanged.
+    Remote packages prefer the resolved ``subdir`` (normalized to a leading
+    ``./``); when a package has no subdir, fall back to a relative path
+    derived from the package name so every entry still resolves to a
+    sensible on-disk location.
+    """
     if entry.is_local:
         return entry.source
 
-    source: dict[str, Any] = OrderedDict()
-    remote_url = _remote_source_url(pkg)
-    if remote_url:
-        source["source"] = "url"
-        source["url"] = remote_url
-    else:
-        source["source"] = "github"
-        source["repo"] = pkg.source_repo
-    if pkg.ref:
-        source["ref"] = pkg.ref
-    if pkg.sha:
-        source["sha"] = pkg.sha
     if pkg.subdir:
-        source["path"] = pkg.subdir
-    return source
+        relative = pkg.subdir.strip("/")
+        return relative if relative.startswith("./") else f"./{relative}"
+
+    return f"./{pkg.name}"
 
 
 def _apply_field_with_precedence(

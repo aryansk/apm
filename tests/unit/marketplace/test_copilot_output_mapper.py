@@ -66,7 +66,7 @@ def test_copilot_mapper_nests_marketplace_metadata_and_keeps_local_source():
     ]
 
 
-def test_copilot_mapper_preserves_remote_pin_information():
+def test_copilot_mapper_emits_relative_path_string_for_remote_subdir():
     entry = PackageEntry(
         name="demo",
         source="acme/demo",
@@ -87,10 +87,51 @@ def test_copilot_mapper_preserves_remote_pin_information():
     )
 
     plugin = result.document["plugins"][0]
-    assert plugin["source"] == {
-        "source": "github",
-        "repo": "acme/demo",
-        "ref": "v2.1.0",
-        "sha": "0123456789abcdef0123456789abcdef01234567",
-        "path": "plugins/demo",
-    }
+    assert plugin["source"] == "./plugins/demo"
+    assert "ref" not in plugin
+    assert "sha" not in plugin
+    assert "author" not in plugin
+    assert "tags" not in plugin
+    assert "homepage" not in plugin
+    assert "repository" not in plugin
+    assert "license" not in plugin
+    assert "category" not in plugin
+
+
+def test_copilot_mapper_emits_relative_path_string_for_remote_without_subdir():
+    entry = PackageEntry(
+        name="demo",
+        source="example.org/acme/demo",
+        description="Demo plugin",
+    )
+
+    result = CopilotMarketplaceMapper().compose(
+        config=_config(entry),
+        resolved=(
+            _resolved(
+                host="example.org",
+                source_url="https://example.org/acme/demo",
+            ),
+        ),
+        remote_metadata={"demo": {"version": "2.1.0"}},
+    )
+
+    plugin = result.document["plugins"][0]
+    assert isinstance(plugin["source"], str)
+    assert plugin["source"] == "./demo"
+
+
+def test_copilot_mapper_omits_empty_description():
+    entry = PackageEntry(
+        name="demo",
+        source="./plugins/demo",
+        is_local=True,
+    )
+
+    result = CopilotMarketplaceMapper().compose(
+        config=_config(entry),
+        resolved=(_resolved(),),
+    )
+
+    plugin = result.document["plugins"][0]
+    assert "description" not in plugin
