@@ -372,6 +372,7 @@ class CopilotMarketplaceMapper(MarketplaceOutputMapper):
         if metadata:
             doc["metadata"] = metadata
 
+        diagnostics = list(name_diagnostics)
         plugins: list[dict[str, Any]] = []
         for pkg in resolved:
             entry = entry_by_name.get(pkg.name)
@@ -385,11 +386,11 @@ class CopilotMarketplaceMapper(MarketplaceOutputMapper):
             version = entry.version if entry.is_local else meta.get("version") or entry.version
             if version:
                 plugin["version"] = version
-            plugin["source"] = _copilot_source(entry, pkg)
+            plugin["source"] = _copilot_source(entry, pkg, diagnostics)
             plugins.append(plugin)
 
         doc["plugins"] = plugins
-        return MapperResult(doc, (), tuple(name_diagnostics))
+        return MapperResult(doc, (), tuple(diagnostics))
 
 
 MARKETPLACE_OUTPUT_MAPPERS: dict[str, MarketplaceOutputMapper] = {
@@ -448,7 +449,11 @@ def _codex_source(entry: PackageEntry, pkg: ResolvedPackage) -> dict[str, Any]:
     return source_obj
 
 
-def _copilot_source(entry: PackageEntry, pkg: ResolvedPackage) -> str:
+def _copilot_source(
+    entry: PackageEntry,
+    pkg: ResolvedPackage,
+    diagnostics: list[BuildDiagnostic] | None = None,
+) -> str:
     """Return a Copilot CLI ``source`` as a relative path string.
 
     Unlike Claude/Codex, the Copilot CLI schema has no object-shaped source
@@ -458,13 +463,53 @@ def _copilot_source(entry: PackageEntry, pkg: ResolvedPackage) -> str:
     ``./``); when a package has no subdir, fall back to a relative path
     derived from the package name so every entry still resolves to a
     sensible on-disk location.
+
+    Trade-off (by design, not a bug): resolved ``ref``/``sha`` pin metadata
+    is intentionally dropped for remote packages, because the Copilot CLI
+    schema has nowhere to carry it -- a consumer reinstalling from
+    ``marketplace.json`` alone cannot reproduce the exact pinned commit the
+    producer resolved at pack time; only ``apm install`` (which reads
+    ``apm.yml``/``apm.lock.yaml`` directly) retains that precision. Likewise,
+    a package with no ``subdir`` gets a *fabricated* ``./<pkg.name>`` path --
+    this is a best-effort placeholder, not a verified on-disk location; if
+    the installed layout differs, set an explicit ``subdir:`` on the package
+    entry. Both trade-offs surface as ``verbose``-level diagnostics below so
+    authors can audit them without changing the emitted (intentionally
+    minimal) Copilot schema.
     """
     if entry.is_local:
         return entry.source
 
+    if diagnostics is not None and (pkg.ref or pkg.sha):
+        diagnostics.append(
+            BuildDiagnostic(
+                level="verbose",
+                message=(
+                    f"Copilot output for '{pkg.name}': resolved pin "
+                    f"(ref={pkg.ref or '-'}, sha={pkg.sha or '-'}) is not "
+                    f"carried in the Copilot schema's path-only 'source'. "
+                    f"Use 'apm install' (reads apm.yml/apm.lock.yaml) to "
+                    f"reproduce the exact pin."
+                ),
+            )
+        )
+
     if pkg.subdir:
         relative = pkg.subdir.strip("/")
         return relative if relative.startswith("./") else f"./{relative}"
+
+    if diagnostics is not None:
+        diagnostics.append(
+            BuildDiagnostic(
+                level="verbose",
+                message=(
+                    f"Copilot output for '{pkg.name}': no 'subdir' resolved; "
+                    f"fabricated './{pkg.name}' as a best-effort placeholder "
+                    f"path. Set an explicit 'subdir:' on the package entry if "
+                    f"the installed layout differs."
+                ),
+            )
+        )
 
     return f"./{pkg.name}"
 

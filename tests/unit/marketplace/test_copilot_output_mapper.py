@@ -135,3 +135,66 @@ def test_copilot_mapper_omits_empty_description():
 
     plugin = result.document["plugins"][0]
     assert "description" not in plugin
+
+
+def test_copilot_mapper_normalizes_subdir_with_leading_dot_slash():
+    """A ``subdir`` already written as ``./x`` is passed through unchanged."""
+    entry = PackageEntry(name="demo", source="acme/demo", ref="main")
+
+    result = CopilotMarketplaceMapper().compose(
+        config=_config(entry),
+        resolved=(_resolved(subdir="./plugins/demo"),),
+    )
+
+    assert result.document["plugins"][0]["source"] == "./plugins/demo"
+
+
+def test_copilot_mapper_normalizes_subdir_with_trailing_slash():
+    """A ``subdir`` written with a trailing slash (``x/``) is normalized to
+    a leading ``./`` and no trailing slash.
+    """
+    entry = PackageEntry(name="demo", source="acme/demo", ref="main")
+
+    result = CopilotMarketplaceMapper().compose(
+        config=_config(entry),
+        resolved=(_resolved(subdir="plugins/demo/"),),
+    )
+
+    assert result.document["plugins"][0]["source"] == "./plugins/demo"
+
+
+def test_copilot_mapper_emits_verbose_diagnostic_when_dropping_pin_metadata():
+    """Dropping a resolved ref/sha pin (schema has no field for it) is
+    surfaced as a verbose diagnostic rather than silently discarded.
+    """
+    entry = PackageEntry(name="demo", source="acme/demo", ref="main")
+
+    result = CopilotMarketplaceMapper().compose(
+        config=_config(entry),
+        resolved=(
+            _resolved(
+                ref="v2.1.0",
+                sha="0123456789abcdef0123456789abcdef01234567",
+                subdir="plugins/demo",
+            ),
+        ),
+    )
+
+    messages = [d.message for d in result.diagnostics if d.level == "verbose"]
+    assert any("demo" in m and "pin" in m for m in messages)
+
+
+def test_copilot_mapper_emits_verbose_diagnostic_when_fabricating_subdir():
+    """A remote package with no resolved ``subdir`` gets a fabricated
+    ``./<name>`` path; this placeholder is surfaced as a verbose diagnostic.
+    """
+    entry = PackageEntry(name="demo", source="acme/demo", ref="main")
+
+    result = CopilotMarketplaceMapper().compose(
+        config=_config(entry),
+        resolved=(_resolved(),),
+    )
+
+    messages = [d.message for d in result.diagnostics if d.level == "verbose"]
+    assert any("demo" in m and "fabricated" in m for m in messages)
+    assert result.document["plugins"][0]["source"] == "./demo"
