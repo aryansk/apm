@@ -49,7 +49,7 @@ For integration testing, a separate consumer fixture or sample project keeps
 the boundary clearest: point it at the source repository/ref, install, and
 verify the generated target files there.
 
-APM does not currently provide a live-link/development-install mode that keeps
-an installed consumer copy synchronized with edits in the source checkout. If
-you need immediate feedback while authoring, test from the source repository or
-re-run the install/update workflow after changes.
+As of this writing, the documented workflow does not include a live-link /
+development-install mode that keeps an installed consumer copy synchronized with
+edits in the source checkout. For immediate feedback while authoring, test from
+the source repository or re-run the install/update workflow after changes.
